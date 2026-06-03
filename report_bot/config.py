@@ -9,7 +9,7 @@ load_dotenv()
 
 
 def csv_env(name: str, default: str = "") -> list[str]:
-    raw = os.getenv(name, default)
+    raw = os.getenv(name) or default
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
