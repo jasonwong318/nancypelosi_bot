@@ -15,6 +15,10 @@ def main() -> None:
     symbols = sorted(set(settings.portfolio_symbols + settings.watchlist_symbols))
     quotes = fetch_quotes(symbols)
     news = news_payload(settings.news_queries)
+    print(f"Quote status: {quotes.get('status')}")
+    print(f"Quote count: {len(quotes.get('quotes', []))}")
+    print(f"News query count: {len(settings.news_queries)}")
+    print(f"News item count: {len(news.get('items', []))}")
     system_prompt = settings.system_prompt_path.read_text(encoding="utf-8")
     user_payload = build_user_payload(
         quotes=quotes,
