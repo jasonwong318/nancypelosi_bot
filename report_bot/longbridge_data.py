@@ -5,6 +5,8 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Any
 
+import requests
+
 
 @dataclass
 class Quote:
@@ -60,10 +62,11 @@ def _to_str(value: Any) -> str | None:
 
 def fetch_quotes(symbols: list[str]) -> dict[str, Any]:
     if not has_longbridge_credentials():
+        yahoo_quotes = fetch_yahoo_quotes(symbols)
         return {
-            "status": "missing_credentials",
+            "status": "longbridge_missing_using_yahoo_fallback",
             "message": "Longbridge OpenAPI credentials are not configured yet.",
-            "quotes": [],
+            "quotes": yahoo_quotes,
         }
 
     try:
@@ -74,6 +77,52 @@ def fetch_quotes(symbols: list[str]) -> dict[str, Any]:
             "message": f"Longbridge SDK import failed: {exc}",
             "quotes": [],
         }
+
+
+def fetch_yahoo_quotes(symbols: list[str]) -> list[dict[str, Any]]:
+    quotes: list[dict[str, Any]] = []
+    for symbol in symbols:
+        yahoo_symbol = _to_yahoo_symbol(symbol)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
+        try:
+            response = requests.get(
+                url,
+                params={"range": "1d", "interval": "1m"},
+                timeout=20,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            result = payload.get("chart", {}).get("result", [])
+            if not result:
+                continue
+            meta = result[0].get("meta", {})
+            quote = Quote(
+                symbol=symbol,
+                last_done=_to_str(meta.get("regularMarketPrice")),
+                prev_close=_to_str(meta.get("chartPreviousClose") or meta.get("previousClose")),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                source="Yahoo Finance chart API fallback",
+            )
+            quotes.append(asdict(quote))
+        except Exception as exc:
+            quotes.append(
+                {
+                    "symbol": symbol,
+                    "source": "Yahoo Finance chart API fallback",
+                    "error": str(exc),
+                }
+            )
+    return quotes
+
+
+def _to_yahoo_symbol(symbol: str) -> str:
+    if symbol.endswith(".US"):
+        return symbol.removesuffix(".US")
+    if symbol.endswith(".HK"):
+        code = symbol.removesuffix(".HK")
+        return f"{code.zfill(4)}.HK"
+    return symbol
 
     try:
         if hasattr(Config, "from_apikey_env"):
