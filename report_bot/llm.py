@@ -1,21 +1,45 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import requests
 
 
-def build_user_payload(quotes: dict, news: dict, portfolio: list[str], watchlist: list[str]) -> str:
+def build_user_payload(
+    quotes: dict[str, Any],
+    news: dict[str, Any],
+    macro: dict[str, Any],
+    account: dict[str, Any],
+    risk: dict[str, Any],
+    portfolio: list[str],
+    watchlist: list[str],
+    symbol_metadata: dict[str, Any],
+) -> str:
     data = {
+        "report_type": "scheduled_investment_intelligence_memo",
         "portfolio_symbols": portfolio,
         "watchlist_symbols": watchlist,
-        "quotes": quotes,
-        "news": news,
+        "authoritative_symbol_metadata": symbol_metadata,
+        "market_data": quotes,
+        "macro_data": macro,
+        "news_data": news,
+        "account_data": account,
+        "risk_data": risk,
+        "instructions": [
+            "Use authoritative_symbol_metadata as the only source for ticker-to-company mapping.",
+            "Do not infer or rename tickers. If a symbol is unknown, say it is unknown.",
+            "If market_data.status is longbridge_missing_using_yahoo_fallback, clearly state that Longbridge real-time data is not connected yet.",
+            "Only attribute news to a holding/watchlist name when the article title explicitly mentions the ticker, company name, parent company, ADR, or same listed entity.",
+            "Treat ETF symbols as ETF/strategy products, not operating companies.",
+            "Account data is a placeholder unless status says manual_positions_loaded. Do not invent position size, cost basis, P&L, cash, or margin.",
+            "Every stock-specific conclusion must be traceable to market_data, news_data, macro_data, account_data, or risk_data.",
+        ],
     }
-    return (
-        "請根據以下即時/最新資料，生成我的市場報告。"
-        "若 Longbridge credentials 未配置或資料不足，必須明確說明不可作實時股價判斷。\n\n"
-        + json.dumps(data, ensure_ascii=False, indent=2)
+    return "Generate the scheduled investment intelligence memo from this JSON payload.\n\n" + json.dumps(
+        data,
+        ensure_ascii=False,
+        indent=2,
     )
 
 
@@ -36,9 +60,9 @@ def generate_report(
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": user_payload}]}],
             "generationConfig": {
-                "temperature": 0.35,
-                "topP": 0.9,
-                "maxOutputTokens": 1800,
+                "temperature": 0.25,
+                "topP": 0.85,
+                "maxOutputTokens": 2200,
             },
         },
         timeout=60,
