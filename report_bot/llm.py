@@ -62,7 +62,7 @@ def generate_report(
             "generationConfig": {
                 "temperature": 0.25,
                 "topP": 0.85,
-                "maxOutputTokens": 2200,
+                "maxOutputTokens": 3500,
             },
         },
         timeout=60,
