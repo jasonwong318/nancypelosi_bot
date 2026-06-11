@@ -5,9 +5,11 @@ from zoneinfo import ZoneInfo
 
 from report_bot.account_data import account_payload
 from report_bot.config import load_settings
+from report_bot.fundamentals import fundamentals_payload
 from report_bot.llm import build_user_payload, generate_report
 from report_bot.longbridge_data import fetch_quotes
 from report_bot.macro_data import macro_payload
+from report_bot.movers import compute_movers
 from report_bot.news import news_payload
 from report_bot.risk import risk_payload
 from report_bot.symbols import selected_metadata
@@ -18,25 +20,36 @@ def main() -> None:
     settings = load_settings()
     symbols = sorted(set(settings.portfolio_symbols + settings.watchlist_symbols))
     symbol_metadata = selected_metadata(symbols)
+
     quotes = fetch_quotes(symbols)
+    movers = compute_movers(quotes)
+    focus_symbols = movers.get("focus_symbols", [])
+
     macro = macro_payload()
-    news = news_payload(settings.news_queries)
+    news = news_payload(settings.news_queries, focus_symbols=focus_symbols)
     account = account_payload(settings.portfolio_symbols)
     risk = risk_payload(settings.portfolio_symbols, settings.watchlist_symbols, symbol_metadata)
+    fundamentals = fundamentals_payload(settings.portfolio_symbols)
+
     print(f"Quote status: {quotes.get('status')}")
     print(f"Quote count: {len(quotes.get('quotes', []))}")
+    print(f"Significant movers: {len(movers.get('significant_movers', []))}")
+    print(f"Focus symbols: {focus_symbols}")
     print(f"Macro item count: {len(macro.get('items', []))}")
-    print(f"News query count: {len(settings.news_queries)}")
     print(f"News item count: {len(news.get('items', []))}")
     print(f"Account status: {account.get('status')}")
     print(f"Risk status: {risk.get('status')}")
+    print(f"Fundamentals status: {fundamentals.get('status')}")
+
     system_prompt = settings.system_prompt_path.read_text(encoding="utf-8")
     user_payload = build_user_payload(
         quotes=quotes,
+        movers=movers,
         news=news,
         macro=macro,
         account=account,
         risk=risk,
+        fundamentals=fundamentals,
         portfolio=settings.portfolio_symbols,
         watchlist=settings.watchlist_symbols,
         symbol_metadata=symbol_metadata,

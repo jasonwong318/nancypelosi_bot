@@ -8,10 +8,12 @@ import requests
 
 def build_user_payload(
     quotes: dict[str, Any],
+    movers: dict[str, Any],
     news: dict[str, Any],
     macro: dict[str, Any],
     account: dict[str, Any],
     risk: dict[str, Any],
+    fundamentals: dict[str, Any],
     portfolio: list[str],
     watchlist: list[str],
     symbol_metadata: dict[str, Any],
@@ -22,18 +24,22 @@ def build_user_payload(
         "watchlist_symbols": watchlist,
         "authoritative_symbol_metadata": symbol_metadata,
         "market_data": quotes,
+        "movers_summary": movers,
+        "fundamentals_data": fundamentals,
         "macro_data": macro,
         "news_data": news,
         "account_data": account,
         "risk_data": risk,
         "instructions": [
+            "CRITICAL DIRECTION RULE: Copy gainers_summary and losers_summary verbatim for all up/down statements. Never infer direction from price numbers.",
+            "FOCUS RULE: Deep analysis only for symbols in movers_summary.focus_symbols. All other holdings use one-line table format.",
             "Use authoritative_symbol_metadata as the only source for ticker-to-company mapping.",
-            "Do not infer or rename tickers. If a symbol is unknown, say it is unknown.",
-            "If market_data.status is longbridge_missing_using_yahoo_fallback, clearly state that Longbridge real-time data is not connected yet.",
-            "Only attribute news to a holding/watchlist name when the article title explicitly mentions the ticker, company name, parent company, ADR, or same listed entity.",
+            "If market_data.status is longbridge_missing_using_yahoo_fallback, state this clearly.",
+            "Only attribute news to a stock when the article title explicitly names the ticker, company, parent, ADR, or same listed entity.",
             "Treat ETF symbols as ETF/strategy products, not operating companies.",
-            "Account data is a placeholder unless status says manual_positions_loaded. Do not invent position size, cost basis, P&L, cash, or margin.",
-            "Every stock-specific conclusion must be traceable to market_data, news_data, macro_data, account_data, or risk_data.",
+            "Account data is a placeholder unless status is manual_positions_loaded.",
+            "If fundamentals_data item has error or no data, write 資料不足, do not invent ratios.",
+            "Every stock-specific conclusion must trace to market_data, movers_summary, news_data, fundamentals_data, macro_data, account_data, or risk_data.",
         ],
     }
     return "Generate the scheduled investment intelligence memo from this JSON payload.\n\n" + json.dumps(
@@ -60,9 +66,9 @@ def generate_report(
             "systemInstruction": {"parts": [{"text": system_prompt}]},
             "contents": [{"role": "user", "parts": [{"text": user_payload}]}],
             "generationConfig": {
-                "temperature": 0.25,
+                "temperature": 0.2,
                 "topP": 0.85,
-                "maxOutputTokens": 3500,
+                "maxOutputTokens": 3000,
             },
         },
         timeout=60,
@@ -81,8 +87,6 @@ def generate_report(
 def fallback_report(user_payload: str) -> str:
     return (
         "【市場報告系統提示】\n"
-        "Gemini API key 尚未配置，因此目前只完成資料收集，未進行 LLM 整合。\n\n"
-        "下一步：在 GitHub Secrets 加入 GEMINI_API_KEY 後，系統會自動套用 system_prompt.txt 生成正體中文報告。\n\n"
-        "原始資料摘要：\n"
+        "Gemini API key 尚未配置。\n\n"
         f"{user_payload[:3000]}"
     )
