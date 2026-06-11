@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import decimal
 import json
 from typing import Any
 
 import requests
+
+
+class _Encoder(json.JSONEncoder):
+    def default(self, o: Any) -> Any:
+        if isinstance(o, decimal.Decimal):
+            return float(o)
+        return super().default(o)
 
 
 def build_user_payload(
@@ -46,6 +54,7 @@ def build_user_payload(
         data,
         ensure_ascii=False,
         indent=2,
+        cls=_Encoder,
     )
 
 
