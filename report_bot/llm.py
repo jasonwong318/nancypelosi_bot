@@ -40,7 +40,7 @@ def build_user_payload(
         "risk_data": risk,
         "instructions": [
             "CRITICAL DIRECTION RULE: Copy gainers_summary and losers_summary verbatim for all up/down statements. Never infer direction from price numbers.",
-            "FOCUS RULE: Deep analysis only for symbols in movers_summary.focus_symbols. All other holdings use one-line table format.",
+            "FOCUS RULE: Always write the focus analysis section for movers_summary.focus_symbols. If movers_summary.is_quiet_day is true, frame it as a quiet-day briefing for the biggest movers.",
             "Use authoritative_symbol_metadata as the only source for ticker-to-company mapping.",
             "If market_data.status is longbridge_missing_using_yahoo_fallback, state this clearly.",
             "Only attribute news to a stock when the article title explicitly names the ticker, company, parent, ADR, or same listed entity.",
@@ -77,10 +77,10 @@ def generate_report(
             "generationConfig": {
                 "temperature": 0.2,
                 "topP": 0.85,
-                "maxOutputTokens": 3000,
+                "maxOutputTokens": 4000,
             },
         },
-        timeout=60,
+        timeout=90,
     )
     response.raise_for_status()
     payload = response.json()
@@ -88,9 +88,16 @@ def generate_report(
     if not candidates:
         return "LLM 沒有返回內容。請檢查 Gemini API key、模型名稱與 quota。"
 
+    finish_reason = candidates[0].get("finishReason", "")
+    print(f"Gemini finish reason: {finish_reason}")
+
     parts = candidates[0].get("content", {}).get("parts", [])
     text = "".join(part.get("text", "") for part in parts).strip()
-    return text or "LLM 返回空白內容。"
+    if not text:
+        return "LLM 返回空白內容。"
+    if finish_reason == "MAX_TOKENS":
+        text += "\n\n（⚠️ 報告因篇幅上限被截斷）"
+    return text
 
 
 def fallback_report(user_payload: str) -> str:
