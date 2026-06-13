@@ -42,7 +42,16 @@ def load_settings() -> Settings:
         ),
         news_queries=csv_env(
             "NEWS_QUERIES",
-            "港股 美股 科技股 利率 Tesla Nvidia Alibaba,US market Hong Kong stocks Fed CPI chips tariffs",
+            # Broad market events - catches IPOs, geopolitical shocks, macro surprises
+            "US stock market major news IPO earnings geopolitical today,"
+            # Chinese/HK market themes
+            "港股 美股 科技股 AI 板塊 要聞 市場,"
+            # AI infrastructure sector - optical comms, storage, chips, data center
+            "AI data center optical communications storage semiconductor chips NVDA MRVL LITE,"
+            # Space, defence, energy, geopolitical
+            "SpaceX space stocks aerospace defense oil energy Iran geopolitical market,"
+            # China tech + HK stocks
+            "中概股 港股 科技 AI 阿里巴巴 騰讯 Tesla Nvidia 影響",
         ),
         system_prompt_path=root / "system_prompt.txt",
     )
