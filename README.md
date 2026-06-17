@@ -7,7 +7,7 @@ Free scheduled investment intelligence MVP:
 3. Yahoo Finance chart API is used only as a temporary fallback when Longbridge is not connected.
 4. Google News RSS supplies free news headlines.
 5. Yahoo Finance chart API supplies basic macro indicators: VIX, US10Y, DXY, gold, oil.
-6. Gemini generates a Traditional Chinese scheduled investment memo.
+6. Zhipu GLM generates a Traditional Chinese scheduled investment memo.
 7. Telegram sends the memo.
 
 ## Required GitHub Secrets
@@ -15,7 +15,7 @@ Free scheduled investment intelligence MVP:
 ```text
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
-GEMINI_API_KEY
+ZHIPU_API_KEY
 ```
 
 Add these after Longbridge OpenAPI is approved:
@@ -43,7 +43,7 @@ IBKR is not connected in this MVP. The account layer is reserved so the report w
 ## Optional GitHub Variables
 
 ```text
-GEMINI_MODEL
+GLM_MODEL
 PORTFOLIO_SYMBOLS
 WATCHLIST_SYMBOLS
 NEWS_QUERIES

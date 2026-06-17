@@ -59,8 +59,8 @@ def main() -> None:
         symbol_metadata=symbol_metadata,
     )
     report = generate_report(
-        api_key=settings.gemini_api_key,
-        model=settings.gemini_model,
+        api_key=settings.glm_api_key,
+        model=settings.glm_model,
         system_prompt=system_prompt,
         user_payload=user_payload,
     )

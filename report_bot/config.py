@@ -17,8 +17,8 @@ def csv_env(name: str, default: str = "") -> list[str]:
 class Settings:
     telegram_bot_token: str
     telegram_chat_id: str
-    gemini_api_key: str
-    gemini_model: str
+    glm_api_key: str
+    glm_model: str
     portfolio_symbols: list[str]
     watchlist_symbols: list[str]
     news_queries: list[str]
@@ -30,8 +30,8 @@ def load_settings() -> Settings:
     return Settings(
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
-        gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-3-flash"),
+        glm_api_key=os.getenv("ZHIPU_API_KEY", ""),
+        glm_model=os.getenv("GLM_MODEL", "glm-4.7-flash"),
         portfolio_symbols=csv_env(
             "PORTFOLIO_SYMBOLS",
             "TSLA.US,VOO.US,0941.HK,0883.HK,2802.HK,3416.HK,MRVL.US,LITE.US,9988.HK,9888.HK,3896.HK",

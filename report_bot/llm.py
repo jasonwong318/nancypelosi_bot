@@ -125,35 +125,34 @@ def generate_report(
     if not api_key:
         return fallback_report(user_payload)
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     response = requests.post(
-        url,
-        params={"key": api_key},
+        "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
         json={
-            "systemInstruction": {"parts": [{"text": system_prompt}]},
-            "contents": [{"role": "user", "parts": [{"text": user_payload}]}],
-            "generationConfig": {
-                "temperature": 0.15,
-                "topP": 0.85,
-                "maxOutputTokens": 4000,
-            },
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_payload},
+            ],
+            "temperature": 0.15,
+            "top_p": 0.85,
+            "max_tokens": 4000,
         },
         timeout=90,
     )
     response.raise_for_status()
     payload = response.json()
-    candidates = payload.get("candidates", [])
-    if not candidates:
-        return "LLM 沒有返回內容。請檢查 Gemini API key、模型名稱與 quota。"
+    choices = payload.get("choices", [])
+    if not choices:
+        return "LLM 沒有返回內容。請檢查 GLM API key、模型名稱與 quota。"
 
-    finish_reason = candidates[0].get("finishReason", "")
-    print(f"Gemini finish reason: {finish_reason}")
+    finish_reason = choices[0].get("finish_reason", "")
+    print(f"GLM finish reason: {finish_reason}")
 
-    parts = candidates[0].get("content", {}).get("parts", [])
-    text = "".join(part.get("text", "") for part in parts).strip()
+    text = (choices[0].get("message", {}).get("content") or "").strip()
     if not text:
         return "LLM 返回空白內容。"
-    if finish_reason == "MAX_TOKENS":
+    if finish_reason == "length":
         text += "\n\n⚠️ 報告因篇幅上限被截斷。"
     return text
 
@@ -161,6 +160,6 @@ def generate_report(
 def fallback_report(user_payload: str) -> str:
     return (
         "【市場報告系統提示】\n"
-        "Gemini API key 尚未配置。\n\n"
+        "GLM API key 尚未配置。\n\n"
         f"{user_payload[:3000]}"
     )
