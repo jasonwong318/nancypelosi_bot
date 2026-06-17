@@ -136,7 +136,7 @@ def generate_report(
             ],
             "temperature": 0.15,
             "top_p": 0.85,
-            "max_tokens": 4000,
+            "max_tokens": 8000,
         },
         timeout=90,
     )

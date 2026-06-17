@@ -147,11 +147,18 @@ def _fetch_yahoo_chart_quote(requested_symbol: str, yahoo_symbol: str, source: s
 def _longbridge_quote_to_dict(item: Any) -> dict[str, Any]:
     symbol = _read_attr(item, "symbol") or _read_attr(item, "security") or "UNKNOWN"
     metadata = metadata_for(str(symbol))
-    last_done = _to_str(_read_attr(item, "last_done"))
-    prev_close = _to_str(_read_attr(item, "prev_close"))
+    last_done = _number(_read_attr(item, "last_done"))
+    prev_close = _number(_read_attr(item, "prev_close"))
     timestamp = _read_attr(item, "timestamp")
     if isinstance(timestamp, (int, float)):
         timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+
+    change = None
+    change_percent = None
+    if last_done is not None and prev_close not in (None, 0):
+        raw_change = last_done - prev_close
+        change = f"{raw_change:.4f}"
+        change_percent = f"{(raw_change / prev_close) * 100:.2f}%"
 
     return asdict(
         Quote(
@@ -159,10 +166,10 @@ def _longbridge_quote_to_dict(item: Any) -> dict[str, Any]:
             name=metadata["name"],
             market=metadata["market"],
             security_type=metadata["type"],
-            last_done=last_done,
-            prev_close=prev_close,
-            change=_to_str(_read_attr(item, "change")),
-            change_percent=_to_str(_read_attr(item, "change_percent")),
+            last_done=_to_str(last_done),
+            prev_close=_to_str(prev_close),
+            change=change,
+            change_percent=change_percent,
             open=_to_str(_read_attr(item, "open")),
             high=_to_str(_read_attr(item, "high")),
             low=_to_str(_read_attr(item, "low")),

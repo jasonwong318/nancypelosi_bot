@@ -34,30 +34,30 @@ def _fetch_longbridge_fundamentals(symbols: list[str]) -> dict[str, Any]:
         try:
             valuation = ctx.valuation(lb_symbol)
             metrics = _attr(valuation, "metrics")
-            entry["pe_ttm"] = _num(_attr(metrics, "pe"))
-            entry["pb"] = _num(_attr(metrics, "pb"))
-            entry["ps"] = _num(_attr(metrics, "ps"))
-            entry["dividend_yield_pct"] = _num(_attr(metrics, "dvd_yld"))
+            entry["pe_ttm"] = _latest_metric(_attr(metrics, "pe"))
+            entry["pb"] = _latest_metric(_attr(metrics, "pb"))
+            entry["ps"] = _latest_metric(_attr(metrics, "ps"))
+            entry["dividend_yield_pct"] = _latest_metric(_attr(metrics, "dvd_yld"))
         except Exception as exc:
             entry["valuation_error"] = str(exc)
 
         try:
             rating = ctx.institution_rating(lb_symbol)
-            summary = _attr(rating, "summary")
-            target = _attr(summary, "target")
+            latest = _attr(rating, "latest")
+            target = _attr(latest, "target")
             low = _num(_attr(target, "lowest_price"))
             high = _num(_attr(target, "highest_price"))
             if low is not None and high is not None:
                 entry["analyst_target_price"] = round((low + high) / 2, 2)
                 entry["analyst_target_low"] = low
                 entry["analyst_target_high"] = high
-            recommend = _attr(summary, "recommend")
+            evaluate = _attr(latest, "evaluate")
             entry["analyst_recommend_counts"] = {
-                "strong_buy": _num(_attr(recommend, "strong_buy")),
-                "buy": _num(_attr(recommend, "buy")),
-                "hold": _num(_attr(recommend, "hold")),
-                "sell": _num(_attr(recommend, "sell")),
-                "under": _num(_attr(recommend, "under")),
+                "strong_buy": _num(_attr(evaluate, "over")),
+                "buy": _num(_attr(evaluate, "buy")),
+                "hold": _num(_attr(evaluate, "hold")),
+                "sell": _num(_attr(evaluate, "sell")),
+                "under": _num(_attr(evaluate, "under")),
             }
         except Exception as exc:
             entry["institution_rating_error"] = str(exc)
@@ -159,3 +159,11 @@ def _num(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _latest_metric(metric: Any) -> float | None:
+    """Extract the most recent value from a Longbridge ValuationMetricData time-series."""
+    points = _attr(metric, "list") or []
+    if not points:
+        return None
+    return _num(_attr(points[-1], "value"))
