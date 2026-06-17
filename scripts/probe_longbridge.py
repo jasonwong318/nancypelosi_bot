@@ -18,14 +18,23 @@ class _Encoder(json.JSONEncoder):
         return str(o)
 
 
-SAMPLE_SYMBOLS = ["TSLA.US", "0941.HK", "9988.HK", "MRVL.US"]
+SAMPLE_SYMBOLS = ["TSLA.US", "0941.HK"]
+
+
+def _dump(obj):
+    if isinstance(obj, list):
+        return [_dump(o) for o in obj[:2]]
+    attrs = [a for a in dir(obj) if not a.startswith("_")]
+    if not attrs:
+        return str(obj)
+    return {a: str(getattr(obj, a, None))[:200] for a in attrs}
 
 
 def show(label, fn):
     try:
         result = fn()
         print(f"OK   {label}")
-        print(json.dumps(result, cls=_Encoder, default=lambda o: str(o), ensure_ascii=False)[:600])
+        print(json.dumps(_dump(result), cls=_Encoder, default=str, ensure_ascii=False)[:1500])
     except Exception as e:
         print(f"FAIL {label}: {type(e).__name__}: {e}")
     print("-" * 60)
@@ -46,9 +55,9 @@ def main():
         show(f"FundamentalContext.industry_valuation({symbol})", lambda s=symbol: fundamental_ctx.industry_valuation(s))
         show(f"FundamentalContext.company({symbol})", lambda s=symbol: fundamental_ctx.company(s))
 
-    show("MarketContext.anomaly(HK)", lambda: market_ctx.anomaly(Market.HK))
-    show("MarketContext.anomaly(US)", lambda: market_ctx.anomaly(Market.US))
-    show("MarketContext.top_movers([HK, US])", lambda: market_ctx.top_movers([Market.HK, Market.US]))
+    show("MarketContext.anomaly(HK)", lambda: market_ctx.anomaly("HK"))
+    show("MarketContext.anomaly(US)", lambda: market_ctx.anomaly("US"))
+    show("MarketContext.top_movers([HK, US])", lambda: market_ctx.top_movers(["HK", "US"]))
     show("MarketContext.market_status()", lambda: market_ctx.market_status())
 
 
