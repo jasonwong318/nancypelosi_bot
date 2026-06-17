@@ -28,9 +28,13 @@
 3-4 點。VIX、US10Y、DXY、黃金、油價對持倉的實質影響。
 
 ## 📰 板塊與主題動態
-這是報告核心。分析 news_data 中出現的市場主題，并說明如何影響持倉或 watchlist。
+這是報告核心。先看 sector_data（Longbridge 即時市場異動/排行數據，非 LLM 推測），再用 news_data 補充因果解讀。
 
-必須檢查的板塊：
+- sector_data.top_movers：今日跨市場（HK/US）異動最大的股票列表，每項有 symbol、change、alert_reason。先列出與持倉/watchlist 有關聯的項目。
+- sector_data.anomalies：交易所發出的異動警示。若有出現，必須提及。
+- 若 sector_data.top_movers 和 anomalies 都是空列表，直接寫「今日市場異動不顯著」，不可編造板塊故事。
+
+必須檢查的板塊（用 news_data 中 Longbridge News 個股新聞 + Google News RSS 宏觀新聞交叉驗證）：
 - **地緣政治**（中東和平/衝突、中美關稅）→ 0883.HK 能源、科技股影響
 - **AI 基础設施**（光通訊、存儲、數據中心、晶片）→ LITE.US、MRVL.US、NVDA.US 關聯
 - **太空/新能源/IPO**→ 持倉中有沒有間接受益者

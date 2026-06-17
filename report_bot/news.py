@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import quote_plus
 
 import feedparser
@@ -40,11 +42,49 @@ def fetch_google_news(
     return items
 
 
-def news_payload(queries: list[str], focus_symbols: list[str] | None = None) -> dict[str, object]:
-    # Primary queries (user-configured, mix of Chinese and English)
-    items = fetch_google_news(queries, limit_per_query=6)
+def fetch_longbridge_news(symbols: list[str], limit_per_symbol: int = 3) -> list[dict[str, Any]]:
+    if not _has_longbridge_credentials():
+        return []
+    try:
+        from longbridge.openapi import Config, ContentContext
 
-    # English supplement for global events that Chinese queries miss
+        config = Config.from_apikey_env()
+        ctx = ContentContext(config)
+    except Exception:
+        return []
+
+    items: list[dict[str, Any]] = []
+    for symbol in symbols:
+        try:
+            news_items = ctx.news(_to_longbridge_symbol(symbol))
+        except Exception:
+            continue
+        for item in news_items[:limit_per_symbol]:
+            items.append(
+                {
+                    "title": _attr(item, "title") or "",
+                    "description": (_attr(item, "description") or "")[:300],
+                    "link": _attr(item, "url") or "",
+                    "published": str(_attr(item, "published_at") or ""),
+                    "source": "Longbridge News",
+                    "symbol": symbol,
+                }
+            )
+    return items
+
+
+def news_payload(
+    queries: list[str],
+    symbols: list[str] | None = None,
+    focus_symbols: list[str] | None = None,
+) -> dict[str, object]:
+    # Primary: Longbridge per-symbol news. Tied directly to a ticker, so it can
+    # never be mis-attributed to the wrong holding the way keyword RSS search can.
+    items: list[dict[str, Any]] = fetch_longbridge_news(symbols or [])
+
+    # Supplement: broad macro/sector themes that aren't tied to a single ticker
+    # (rate decisions, geopolitics, IPOs) — Longbridge's news endpoint is per-symbol only.
+    google_items = fetch_google_news(queries, limit_per_query=6)
     en_items = fetch_google_news(
         queries,
         limit_per_query=4,
@@ -52,8 +92,11 @@ def news_payload(queries: list[str], focus_symbols: list[str] | None = None) -> 
         region="US",
         ceid="US:en",
     )
-    seen_links = {i["link"] for i in items}
-    items += [e for e in en_items if e["link"] not in seen_links]
+    seen_links = {i.get("link") for i in items}
+    for entry in google_items + en_items:
+        if entry["link"] not in seen_links:
+            items.append(entry)
+            seen_links.add(entry["link"])
 
     # Targeted queries for today's biggest movers
     if focus_symbols:
@@ -64,10 +107,31 @@ def news_payload(queries: list[str], focus_symbols: list[str] | None = None) -> 
             name = meta.get("name", "")
             dynamic.append(f"{ticker} {name}")
         extra = fetch_google_news(dynamic, limit_per_query=4)
-        seen_links = {i["link"] for i in items}
-        items += [e for e in extra if e["link"] not in seen_links]
+        for entry in extra:
+            if entry["link"] not in seen_links:
+                items.append(entry)
+                seen_links.add(entry["link"])
 
     return {
         "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
         "items": items,
     }
+
+
+def _has_longbridge_credentials() -> bool:
+    return all(
+        os.getenv(name)
+        for name in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")
+    )
+
+
+def _to_longbridge_symbol(symbol: str) -> str:
+    if symbol.endswith(".HK"):
+        code = symbol.removesuffix(".HK")
+        if code.isdigit():
+            return f"{int(code)}.HK"
+    return symbol
+
+
+def _attr(obj: Any, name: str) -> Any:
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)

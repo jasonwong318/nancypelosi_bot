@@ -7,21 +7,87 @@ import requests
 
 
 def fundamentals_payload(symbols: list[str]) -> dict[str, Any]:
+    if _has_longbridge_credentials():
+        try:
+            items = _fetch_longbridge_fundamentals(symbols)
+            return {
+                "status": "ok",
+                "source": "Longbridge OpenAPI (valuation + institution_rating + forecast_eps)",
+                "items": items,
+            }
+        except Exception as exc:
+            return _fetch_yahoo_fundamentals(symbols, error=str(exc))
+    return _fetch_yahoo_fundamentals(symbols)
+
+
+def _fetch_longbridge_fundamentals(symbols: list[str]) -> dict[str, Any]:
+    from longbridge.openapi import Config, FundamentalContext
+
+    config = Config.from_apikey_env()
+    ctx = FundamentalContext(config)
+
+    items: dict[str, Any] = {}
+    for symbol in symbols:
+        lb_symbol = _to_longbridge_symbol(symbol)
+        entry: dict[str, Any] = {"source": "Longbridge OpenAPI"}
+
+        try:
+            valuation = ctx.valuation(lb_symbol)
+            metrics = _attr(valuation, "metrics")
+            entry["pe_ttm"] = _num(_attr(metrics, "pe"))
+            entry["pb"] = _num(_attr(metrics, "pb"))
+            entry["ps"] = _num(_attr(metrics, "ps"))
+            entry["dividend_yield_pct"] = _num(_attr(metrics, "dvd_yld"))
+        except Exception as exc:
+            entry["valuation_error"] = str(exc)
+
+        try:
+            rating = ctx.institution_rating(lb_symbol)
+            summary = _attr(rating, "summary")
+            target = _attr(summary, "target")
+            low = _num(_attr(target, "lowest_price"))
+            high = _num(_attr(target, "highest_price"))
+            if low is not None and high is not None:
+                entry["analyst_target_price"] = round((low + high) / 2, 2)
+                entry["analyst_target_low"] = low
+                entry["analyst_target_high"] = high
+            recommend = _attr(summary, "recommend")
+            entry["analyst_recommend_counts"] = {
+                "strong_buy": _num(_attr(recommend, "strong_buy")),
+                "buy": _num(_attr(recommend, "buy")),
+                "hold": _num(_attr(recommend, "hold")),
+                "sell": _num(_attr(recommend, "sell")),
+                "under": _num(_attr(recommend, "under")),
+            }
+        except Exception as exc:
+            entry["institution_rating_error"] = str(exc)
+
+        try:
+            forecast = ctx.forecast_eps(lb_symbol)
+            forecast_items = _attr(forecast, "items") or []
+            if forecast_items:
+                entry["forecast_eps_mean"] = _num(_attr(forecast_items[0], "forecast_eps_mean"))
+        except Exception:
+            pass
+
+        items[symbol] = entry
+
+    return items
+
+
+def _fetch_yahoo_fundamentals(symbols: list[str], error: str | None = None) -> dict[str, Any]:
     items: dict[str, Any] = {}
     for symbol in symbols:
         yahoo_symbol = _to_yahoo_symbol(symbol)
         try:
-            data = _fetch_yahoo_summary(yahoo_symbol)
+            items[symbol] = _fetch_yahoo_summary(yahoo_symbol)
         except Exception as exc:
-            data = {"error": str(exc), "source": "Yahoo Finance quoteSummary"}
-        items[symbol] = data
-
-    # Supplement with Longbridge calc_indexes where credentials exist
-    _supplement_longbridge(symbols, items)
+            items[symbol] = {"error": str(exc), "source": "Yahoo Finance quoteSummary"}
 
     return {
         "status": "ok",
-        "note": "P/E TTM, dividend yield, 52-week range, analyst target price where available.",
+        "source": "Yahoo Finance quoteSummary (Longbridge fallback)",
+        "note": error and f"Longbridge fundamentals failed: {error}" or None,
         "items": items,
     }
 
@@ -48,59 +114,22 @@ def _fetch_yahoo_summary(yahoo_symbol: str) -> dict[str, Any]:
         return v.get("raw") if isinstance(v, dict) else v
 
     pe = _raw(sd, "trailingPE") or _raw(ks, "trailingPE")
-    fpe = _raw(sd, "forwardPE") or _raw(ks, "forwardPE")
     div = _raw(sd, "dividendYield") or _raw(sd, "trailingAnnualDividendYield")
-    w52h = _raw(sd, "fiftyTwoWeekHigh")
-    w52l = _raw(sd, "fiftyTwoWeekLow")
     target = _raw(fd, "targetMeanPrice")
-    rec = _raw(fd, "recommendationKey")
 
     return {
         "pe_ttm": round(pe, 2) if pe else None,
-        "forward_pe": round(fpe, 2) if fpe else None,
         "dividend_yield_pct": round(div * 100, 2) if div else None,
-        "52w_high": w52h,
-        "52w_low": w52l,
         "analyst_target_price": target,
-        "analyst_recommendation": rec,
         "source": "Yahoo Finance quoteSummary",
     }
 
 
-def _supplement_longbridge(symbols: list[str], items: dict[str, Any]) -> None:
-    if not all(os.getenv(k) for k in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")):
-        return
-    try:
-        from longbridge.openapi import CalcIndex, Config, QuoteContext
-
-        config = Config.from_apikey_env()
-        ctx = QuoteContext(config)
-
-        lb_symbols = [_to_longbridge_symbol(s) for s in symbols]
-        index_candidates = ["PeTtmRatio", "PbRatio", "DividendRatioTtm", "TotalMarketValue"]
-        indexes = []
-        for name in index_candidates:
-            idx = getattr(CalcIndex, name, None)
-            if idx is not None:
-                indexes.append(idx)
-        if not indexes:
-            return
-
-        response = ctx.calc_indexes(lb_symbols, indexes)
-        for i, row in enumerate(response):
-            if i >= len(symbols):
-                break
-            symbol = symbols[i]
-            lb_entry = {
-                "lb_pe_ttm": _attr(row, "pe_ttm_ratio"),
-                "lb_pb": _attr(row, "pb_ratio"),
-                "lb_dividend_yield_pct": _attr(row, "dividend_ratio_ttm"),
-                "lb_market_cap": _attr(row, "total_market_value"),
-                "source_lb": "Longbridge calc_indexes",
-            }
-            items.setdefault(symbol, {}).update({k: v for k, v in lb_entry.items() if v is not None})
-    except Exception:
-        pass
+def _has_longbridge_credentials() -> bool:
+    return all(
+        os.getenv(name)
+        for name in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")
+    )
 
 
 def _to_yahoo_symbol(symbol: str) -> str:
@@ -121,3 +150,12 @@ def _to_longbridge_symbol(symbol: str) -> str:
 
 def _attr(obj: Any, name: str) -> Any:
     return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _num(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

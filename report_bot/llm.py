@@ -33,8 +33,8 @@ def _build_holdings_table(
             cp_str = "N/A"
 
         fund = fund_items.get(symbol, {})
-        pe = fund.get("lb_pe_ttm") or fund.get("pe_ttm")
-        div = fund.get("lb_dividend_yield_pct") or fund.get("dividend_yield_pct")
+        pe = fund.get("pe_ttm")
+        div = fund.get("dividend_yield_pct")
         target = fund.get("analyst_target_price")
         last = q.get("last_done")
 
@@ -74,6 +74,7 @@ def build_user_payload(
     account: dict[str, Any],
     risk: dict[str, Any],
     fundamentals: dict[str, Any],
+    sector: dict[str, Any],
     portfolio: list[str],
     watchlist: list[str],
     symbol_metadata: dict[str, Any],
@@ -89,6 +90,7 @@ def build_user_payload(
         "holdings_table": holdings_table,
         "movers_summary": movers,
         "fundamentals_data": fundamentals,
+        "sector_data": sector,
         "macro_data": macro,
         "news_data": news,
         "account_data": account,
@@ -102,6 +104,8 @@ def build_user_payload(
             "Only attribute news to a stock when the article explicitly names the ticker, company, parent, ADR, or same listed entity.",
             "ETF symbols must be analysed as ETF/strategy products only.",
             "Do not invent fundamentals. If fundamentals_data item has error or missing fields, write '資料不足'.",
+            "SECTOR DATA: sector_data.top_movers and sector_data.anomalies are real-time structured market-wide signals (not LLM-inferred). Use them as the factual basis for the sector/theme section instead of guessing from news headlines alone. If both lists are empty, say market-wide moves are unremarkable today.",
+            "NEWS ATTRIBUTION: news_data.items with source 'Longbridge News' include a 'symbol' field — these are already correctly tied to that ticker. Items with source 'Google News RSS' are broader market/macro context and must only be attributed to a holding if the title explicitly names it.",
         ],
     }
     return "Generate the scheduled investment intelligence memo from this JSON payload.\n\n" + json.dumps(

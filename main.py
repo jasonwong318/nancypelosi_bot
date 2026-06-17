@@ -12,6 +12,7 @@ from report_bot.macro_data import macro_payload
 from report_bot.movers import compute_movers
 from report_bot.news import news_payload
 from report_bot.risk import risk_payload
+from report_bot.sector_data import sector_payload
 from report_bot.symbols import selected_metadata
 from report_bot.telegram import send_telegram_message
 
@@ -26,10 +27,11 @@ def main() -> None:
     focus_symbols = movers.get("focus_symbols", [])
 
     macro = macro_payload()
-    news = news_payload(settings.news_queries, focus_symbols=focus_symbols)
+    news = news_payload(settings.news_queries, symbols=symbols, focus_symbols=focus_symbols)
     account = account_payload(settings.portfolio_symbols)
     risk = risk_payload(settings.portfolio_symbols, settings.watchlist_symbols, symbol_metadata)
     fundamentals = fundamentals_payload(settings.portfolio_symbols)
+    sector = sector_payload()
 
     print(f"Quote status: {quotes.get('status')}")
     print(f"Quote count: {len(quotes.get('quotes', []))}")
@@ -40,6 +42,7 @@ def main() -> None:
     print(f"Account status: {account.get('status')}")
     print(f"Risk status: {risk.get('status')}")
     print(f"Fundamentals status: {fundamentals.get('status')}")
+    print(f"Sector status: {sector.get('status')}, anomalies: {len(sector.get('anomalies', []))}, top movers: {len(sector.get('top_movers', []))}")
 
     system_prompt = settings.system_prompt_path.read_text(encoding="utf-8")
     user_payload = build_user_payload(
@@ -50,6 +53,7 @@ def main() -> None:
         account=account,
         risk=risk,
         fundamentals=fundamentals,
+        sector=sector,
         portfolio=settings.portfolio_symbols,
         watchlist=settings.watchlist_symbols,
         symbol_metadata=symbol_metadata,
