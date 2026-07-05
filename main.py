@@ -9,18 +9,41 @@ from report_bot.fundamentals import fundamentals_payload
 from report_bot.llm import build_user_payload, generate_report
 from report_bot.longbridge_data import fetch_quotes
 from report_bot.macro_data import macro_payload
+from report_bot.memory import append_memory, build_comparison, load_memory
 from report_bot.movers import compute_movers
 from report_bot.news import news_payload
 from report_bot.risk import risk_payload
 from report_bot.sector_data import sector_payload
-from report_bot.symbols import selected_metadata
+from report_bot.symbols import sector_map, selected_metadata
 from report_bot.telegram import send_telegram_message
+
+
+def report_session(now_hkt: datetime) -> dict[str, str]:
+    """The 3 scheduled runs serve different readers; tell the LLM which one this is."""
+    hour = now_hkt.hour
+    if hour < 11:
+        return {
+            "session": "morning",
+            "focus": "隔夜美股已收市：總結美股持倉隔夜表現，展望今日港股（開市在即），指出今日港股需要關注的事件。",
+        }
+    if hour < 17:
+        return {
+            "session": "midday",
+            "focus": "港股上午時段已完結：總結港股持倉上午走勢，指出下午及今晚美股開市前需要關注的變數。",
+        }
+    return {
+        "session": "evening",
+        "focus": "港股已收市、美股即將開市：總結港股持倉全日表現，展望今晚美股（含持倉美股的盤前訊號）。",
+    }
 
 
 def main() -> None:
     settings = load_settings()
     symbols = sorted(set(settings.portfolio_symbols + settings.watchlist_symbols))
     symbol_metadata = selected_metadata(symbols)
+
+    now_hkt = datetime.now(ZoneInfo("Asia/Hong_Kong"))
+    session = report_session(now_hkt)
 
     quotes = fetch_quotes(symbols)
     movers = compute_movers(quotes)
@@ -33,6 +56,16 @@ def main() -> None:
     fundamentals = fundamentals_payload(settings.portfolio_symbols)
     sector = sector_payload()
 
+    current_changes: dict[str, float | None] = {}
+    for q in quotes.get("quotes", []):
+        try:
+            current_changes[q.get("symbol", "")] = float(str(q.get("change_percent")).rstrip("%"))
+        except (TypeError, ValueError):
+            current_changes[q.get("symbol", "")] = None
+    memory = load_memory()
+    comparison = build_comparison(current_changes, memory)
+
+    print(f"Session: {session['session']}")
     print(f"Quote status: {quotes.get('status')}")
     print(f"Quote count: {len(quotes.get('quotes', []))}")
     print(f"Significant movers: {len(movers.get('significant_movers', []))}")
@@ -43,6 +76,7 @@ def main() -> None:
     print(f"Risk status: {risk.get('status')}")
     print(f"Fundamentals status: {fundamentals.get('status')}")
     print(f"Sector status: {sector.get('status')}, anomalies: {len(sector.get('anomalies', []))}, top movers: {len(sector.get('top_movers', []))}")
+    print(f"Comparison status: {comparison.get('status')}")
 
     system_prompt = settings.system_prompt_path.read_text(encoding="utf-8")
     user_payload = build_user_payload(
@@ -54,6 +88,9 @@ def main() -> None:
         risk=risk,
         fundamentals=fundamentals,
         sector=sector,
+        comparison=comparison,
+        session=session,
+        sectors=sector_map(settings.portfolio_symbols, settings.watchlist_symbols),
         portfolio=settings.portfolio_symbols,
         watchlist=settings.watchlist_symbols,
         symbol_metadata=symbol_metadata,
@@ -65,9 +102,17 @@ def main() -> None:
         user_payload=user_payload,
     )
 
-    hkt_now = datetime.now(ZoneInfo("Asia/Hong_Kong")).strftime("%Y-%m-%d %H:%M HKT")
-    message = f"市場報告｜{hkt_now}\n\n{report}\n\n免責聲明：以上內容只作資訊整理，不構成投資建議。"
+    hkt_str = now_hkt.strftime("%Y-%m-%d %H:%M HKT")
+    message = f"市場報告｜{hkt_str}\n\n{report}\n\n免責聲明：以上內容只作資訊整理，不構成投資建議。"
     send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, message)
+
+    append_memory(
+        memory,
+        generated_at_hkt=hkt_str,
+        session=session["session"],
+        current_changes=current_changes,
+        significant_summary=str(movers.get("significant_summary", "")),
+    )
 
 
 if __name__ == "__main__":

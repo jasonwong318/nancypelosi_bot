@@ -11,6 +11,9 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+permissions:
+  contents: write
+
 jobs:
   send-report:
     runs-on: ubuntu-latest
@@ -42,3 +45,15 @@ jobs:
           NEWS_QUERIES: ${{ vars.NEWS_QUERIES }}
           ACCOUNT_POSITIONS_JSON: ${{ secrets.ACCOUNT_POSITIONS_JSON }}
         run: python main.py
+
+      - name: Persist report memory
+        if: always()
+        run: |
+          if git status --porcelain report_memory.json | grep -q .; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add report_memory.json
+            git commit -m "Update report memory [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}" || echo "memory push failed (non-fatal)"
+          fi

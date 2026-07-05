@@ -1,13 +1,47 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote_plus
 
 import feedparser
 
 from report_bot.symbols import metadata_for
+
+MAX_NEWS_AGE_HOURS = 48
+
+
+def _parse_published(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)  # RFC 2822, used by Google News RSS
+    except (TypeError, ValueError):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _filter_and_sort_recent(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop stale articles and sort newest first. Items with unparseable dates are
+    kept (Longbridge timestamps vary) but sorted after dated ones."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=MAX_NEWS_AGE_HOURS)
+    kept: list[tuple[datetime | None, dict[str, Any]]] = []
+    for item in items:
+        published = _parse_published(str(item.get("published", "")))
+        if published is not None and published < cutoff:
+            continue
+        if published is not None:
+            item["published_hkt"] = published.astimezone(timezone(timedelta(hours=8))).strftime("%m-%d %H:%M HKT")
+        kept.append((published, item))
+    kept.sort(key=lambda pair: pair[0] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return [item for _, item in kept]
 
 
 def fetch_google_news(
@@ -112,8 +146,17 @@ def news_payload(
                 items.append(entry)
                 seen_links.add(entry["link"])
 
+    items = _filter_and_sort_recent(items)
+
+    # Cap the payload: symbol-attributed Longbridge items first, then the freshest
+    # of the rest, so the LLM's attention isn't diluted by dozens of stale headlines.
+    longbridge_items = [i for i in items if i.get("source") == "Longbridge News"]
+    other_items = [i for i in items if i.get("source") != "Longbridge News"]
+    items = longbridge_items[:20] + other_items[: max(0, 30 - min(len(longbridge_items), 20))]
+
     return {
         "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+        "max_age_hours": MAX_NEWS_AGE_HOURS,
         "items": items,
     }
 

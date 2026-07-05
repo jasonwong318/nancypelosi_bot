@@ -52,6 +52,13 @@ def _build_holdings_table(
             except (TypeError, ValueError, ZeroDivisionError):
                 pass
 
+        recommend = fund.get("analyst_recommend_counts") or {}
+        buy_total = sum(
+            int(v) for k, v in recommend.items() if v and k in ("strong_buy", "buy")
+        )
+        rating_total = sum(int(v) for v in recommend.values() if v)
+        rating_str = f"{buy_total}/{rating_total} 買入" if rating_total else None
+
         rows.append(
             {
                 "symbol": symbol,
@@ -61,9 +68,29 @@ def _build_holdings_table(
                 "last_price": str(last) if last else "N/A",
                 "valuation_metric": metric,
                 "analyst_upside": upside,
+                "analyst_rating": rating_str,
+                "forecast_eps_mean": fund.get("forecast_eps_mean"),
             }
         )
     return rows
+
+
+def _slim_quotes(quotes: dict[str, Any]) -> dict[str, Any]:
+    """Keep only the fields the LLM actually uses; open/high/low/turnover are noise."""
+    return {
+        "status": quotes.get("status"),
+        "message": quotes.get("message"),
+        "quotes": [
+            {
+                "symbol": q.get("symbol"),
+                "name": q.get("name"),
+                "change_percent": q.get("change_percent"),
+                "last_done": q.get("last_done"),
+                "source": q.get("source"),
+            }
+            for q in quotes.get("quotes", [])
+        ],
+    }
 
 
 def build_user_payload(
@@ -75,6 +102,9 @@ def build_user_payload(
     risk: dict[str, Any],
     fundamentals: dict[str, Any],
     sector: dict[str, Any],
+    comparison: dict[str, Any],
+    session: dict[str, str],
+    sectors: dict[str, Any],
     portfolio: list[str],
     watchlist: list[str],
     symbol_metadata: dict[str, Any],
@@ -83,29 +113,37 @@ def build_user_payload(
 
     data = {
         "report_type": "scheduled_investment_intelligence_memo",
+        "report_session": session,
         "portfolio_symbols": portfolio,
         "watchlist_symbols": watchlist,
         "authoritative_symbol_metadata": symbol_metadata,
+        "portfolio_sector_map": sectors,
         # Pre-formatted holdings table: use the 'change' field directly — no parsing needed
         "holdings_table": holdings_table,
         "movers_summary": movers,
-        "fundamentals_data": fundamentals,
+        "fundamentals_status": {"status": fundamentals.get("status"), "source": fundamentals.get("source")},
+        "previous_report_comparison": comparison,
+        "market_data": _slim_quotes(quotes),
         "sector_data": sector,
         "macro_data": macro,
         "news_data": news,
         "account_data": account,
         "risk_data": risk,
         "instructions": [
+            "SESSION: report_session.focus tells you which of the 3 daily runs this is (morning/midday/evening). The Executive Summary and overall framing MUST match that session's perspective.",
             "DIRECTION RULE: For all up/down statements, use movers_summary.gainers_summary and losers_summary verbatim. Never guess direction from prices.",
             "HOLDINGS TABLE: Use holdings_table for the portfolio section. Each row has 'change' (the pre-computed +/-% string) and 'valuation_metric'. Use these exact values — do NOT write the word '漲跌' literally.",
+            "ANALYST DATA: holdings_table rows carry 'analyst_upside' (% to consensus target), 'analyst_rating' (buy count / total), and 'forecast_eps_mean'. The Buffett and Quant sections MUST cite these numbers where present instead of generic statements.",
+            "CONTINUITY: previous_report_comparison contains each symbol's move in the previous report and any multi-run streaks. Reference streaks and reversals (e.g. 連續3次報告下跌 / 扭轉昨日跌勢) — this is what makes the report feel like a series, not isolated snapshots.",
             "QUIET DAY: movers_summary.is_quiet_day indicates low volatility. Do not output 'is_quiet_day=true' in the report — just adjust tone accordingly.",
             "Use authoritative_symbol_metadata as the only source for ticker-to-company mapping.",
             "If market_data.status contains 'yahoo_fallback', state Longbridge is not connected.",
             "Only attribute news to a stock when the article explicitly names the ticker, company, parent, ADR, or same listed entity.",
             "ETF symbols must be analysed as ETF/strategy products only.",
-            "Do not invent fundamentals. If fundamentals_data item has error or missing fields, write '資料不足'.",
+            "Do not invent fundamentals. If fundamentals_data fields are missing, write '資料不足'.",
             "SECTOR DATA: sector_data.top_movers and sector_data.anomalies are real-time structured market-wide signals (not LLM-inferred). Use them as the factual basis for the sector/theme section instead of guessing from news headlines alone. If both lists are empty, say market-wide moves are unremarkable today.",
-            "NEWS ATTRIBUTION: news_data.items with source 'Longbridge News' include a 'symbol' field — these are already correctly tied to that ticker. Items with source 'Google News RSS' are broader market/macro context and must only be attributed to a holding if the title explicitly names it.",
+            "SECTOR MAP: portfolio_sector_map lists the sectors this portfolio/watchlist is actually exposed to. Check news_data and sector_data against THESE sectors — do not spend words on sectors with no exposure.",
+            "NEWS ATTRIBUTION: news_data.items are pre-filtered to the last 48 hours and sorted newest first; each has 'published_hkt'. Items with source 'Longbridge News' include a 'symbol' field — these are already correctly tied to that ticker. Items with source 'Google News RSS' are broader market/macro context and must only be attributed to a holding if the title explicitly names it.",
         ],
     }
     return "Generate the scheduled investment intelligence memo from this JSON payload.\n\n" + json.dumps(
