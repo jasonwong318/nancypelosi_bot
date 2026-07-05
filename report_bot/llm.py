@@ -30,16 +30,21 @@ def _build_holdings_table(
         try:
             cp_str = f"{float(str(cp_raw).rstrip('%')):+.2f}%"
         except (TypeError, ValueError):
-            cp_str = "N/A"
+            cp_str = "無今日報價（休市或未更新）"
 
         fund = fund_items.get(symbol, {})
         pe = fund.get("pe_ttm")
+        ps = fund.get("ps")
         div = fund.get("dividend_yield_pct")
         target = fund.get("analyst_target_price")
         last = q.get("last_done")
 
-        if pe:
+        if pe and float(pe) > 0:
             metric = f"P/E {float(pe):.1f}"
+        elif pe and float(pe) < 0:
+            # Negative P/E means the company is loss-making; showing the raw
+            # number reads as "cheap" — switch to P/S instead
+            metric = f"虧損中（P/S {float(ps):.1f}）" if ps and float(ps) > 0 else "虧損中"
         elif div:
             metric = f"股息率 {float(div):.2f}%"
         else:
@@ -131,6 +136,7 @@ def build_user_payload(
         "risk_data": risk,
         "instructions": [
             "SESSION: report_session.focus tells you which of the 3 daily runs this is (morning/midday/evening). The Executive Summary and overall framing MUST match that session's perspective.",
+            "MARKET CLOSURE: if report_session.market_closure is present, one or both markets are on holiday today — say so up front, do not describe stale prices as today's moves, and frame the report as a situational review rather than a trading-day recap.",
             "DIRECTION RULE: For all up/down statements, use movers_summary.gainers_summary and losers_summary verbatim. Never guess direction from prices.",
             "HOLDINGS TABLE: Use holdings_table for the portfolio section. Each row has 'change' (the pre-computed +/-% string) and 'valuation_metric'. Use these exact values — do NOT write the word '漲跌' literally.",
             "ANALYST DATA: holdings_table rows carry 'analyst_upside' (% to consensus target), 'analyst_rating' (buy count / total), and 'forecast_eps_mean'. The Buffett and Quant sections MUST cite these numbers where present instead of generic statements.",

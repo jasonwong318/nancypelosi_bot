@@ -9,6 +9,7 @@ from report_bot.fundamentals import fundamentals_payload
 from report_bot.llm import build_user_payload, generate_report
 from report_bot.longbridge_data import fetch_quotes
 from report_bot.macro_data import macro_payload
+from report_bot.market_calendar import calendar_payload, closure_notice
 from report_bot.memory import append_memory, build_comparison, load_memory
 from report_bot.movers import compute_movers
 from report_bot.news import news_payload
@@ -44,6 +45,11 @@ def main() -> None:
 
     now_hkt = datetime.now(ZoneInfo("Asia/Hong_Kong"))
     session = report_session(now_hkt)
+    calendar = calendar_payload(now_hkt.date())
+    notice = closure_notice(calendar)
+    if notice:
+        session = dict(session)
+        session["market_closure"] = notice
 
     quotes = fetch_quotes(symbols)
     movers = compute_movers(quotes)
@@ -66,6 +72,7 @@ def main() -> None:
     comparison = build_comparison(current_changes, memory)
 
     print(f"Session: {session['session']}")
+    print(f"Calendar: {calendar}")
     print(f"Quote status: {quotes.get('status')}")
     print(f"Quote count: {len(quotes.get('quotes', []))}")
     print(f"Significant movers: {len(movers.get('significant_movers', []))}")
@@ -103,7 +110,10 @@ def main() -> None:
     )
 
     hkt_str = now_hkt.strftime("%Y-%m-%d %H:%M HKT")
-    message = f"市場報告｜{hkt_str}\n\n{report}\n\n免責聲明：以上內容只作資訊整理，不構成投資建議。"
+    header = f"市場報告｜{hkt_str}"
+    if notice:
+        header += f"\n{notice}"
+    message = f"{header}\n\n{report}\n\n免責聲明：以上內容只作資訊整理，不構成投資建議。"
     send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, message)
 
     append_memory(
