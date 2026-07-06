@@ -23,5 +23,30 @@
    "VOO.US": -0.09
   },
   "significant_summary": "MRVL.US -9.84%, LITE.US -9.09%, TSLA.US -7.49%, AAPL.US +4.84%, 3896.HK +3.98%, 883.HK +3.82%, 100.HK -2.86%, 2513.HK +2.22%"
+ },
+ {
+  "generated_at_hkt": "2026-07-07 00:37 HKT",
+  "session": "morning",
+  "changes": {
+   "100.HK": -3.35,
+   "700.HK": 4.82,
+   "883.HK": -0.66,
+   "941.HK": 0.59,
+   "2513.HK": -14.67,
+   "2802.HK": 0.56,
+   "3416.HK": 0.59,
+   "3896.HK": -3.63,
+   "9888.HK": -0.36,
+   "9988.HK": 1.97,
+   "AAPL.US": 1.09,
+   "AMZN.US": 0.81,
+   "GOOGL.US": 1.19,
+   "LITE.US": 0.32,
+   "MRVL.US": 4.11,
+   "NVDA.US": 1.0,
+   "TSLA.US": 6.28,
+   "VOO.US": 0.74
+  },
+  "significant_summary": "2513.HK -14.67%, TSLA.US +6.28%, 700.HK +4.82%, MRVL.US +4.11%, 3896.HK -3.63%, 100.HK -3.35%"
  }
 ]
