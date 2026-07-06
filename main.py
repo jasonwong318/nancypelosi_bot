@@ -122,10 +122,11 @@ def _run(settings) -> None:
         symbol_metadata=symbol_metadata,
     )
     report = generate_report(
-        api_key=settings.glm_api_key,
-        model=settings.glm_model,
+        api_key=settings.llm_api_key,
+        model=settings.llm_model,
         system_prompt=system_prompt,
         user_payload=user_payload,
+        endpoint=settings.llm_endpoint,
     )
 
     hkt_str = now_hkt.strftime("%Y-%m-%d %H:%M HKT")

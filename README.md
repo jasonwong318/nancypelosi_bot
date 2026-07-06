@@ -7,7 +7,7 @@ Free scheduled investment intelligence MVP:
 3. Yahoo Finance chart API is used only as a temporary fallback when Longbridge is not connected.
 4. Google News RSS supplies free news headlines.
 5. Yahoo Finance chart API supplies basic macro indicators: VIX, US10Y, DXY, gold, oil.
-6. Zhipu GLM generates a Traditional Chinese scheduled investment memo.
+6. An OpenAI-compatible chat LLM generates a Traditional Chinese scheduled investment memo — Volcengine Ark (`ARK_API_KEY`) if set, otherwise Zhipu GLM (`ZHIPU_API_KEY`).
 7. Telegram sends the memo.
 
 ## Required GitHub Secrets
@@ -15,7 +15,13 @@ Free scheduled investment intelligence MVP:
 ```text
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
-ZHIPU_API_KEY
+```
+
+Set exactly one LLM provider secret:
+
+```text
+ARK_API_KEY      # Volcengine Ark (takes priority if both are set)
+ZHIPU_API_KEY    # Zhipu GLM (fallback)
 ```
 
 Add these after Longbridge OpenAPI is approved:
@@ -43,7 +49,8 @@ IBKR is not connected in this MVP. The account layer is reserved so the report w
 ## Optional GitHub Variables
 
 ```text
-GLM_MODEL
+LLM_MODEL       # default: ark-code-latest (Ark) or glm-4.7-flash (GLM)
+LLM_ENDPOINT    # override the chat completions URL entirely
 PORTFOLIO_SYMBOLS
 WATCHLIST_SYMBOLS
 NEWS_QUERIES

@@ -171,6 +171,7 @@ def generate_report(
     model: str,
     system_prompt: str,
     user_payload: str,
+    endpoint: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions",
 ) -> str:
     if not api_key:
         return fallback_report(user_payload)
@@ -179,7 +180,7 @@ def generate_report(
     for attempt in range(MAX_RETRIES):
         try:
             response = requests.post(
-                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                endpoint,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json={
                     "model": model,
@@ -195,17 +196,17 @@ def generate_report(
             )
             if response.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES - 1:
                 wait = RETRY_BACKOFF_SECONDS[attempt]
-                print(f"GLM API returned {response.status_code}, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                print(f"LLM API returned {response.status_code}, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
                 time.sleep(wait)
                 continue
             response.raise_for_status()
             payload = response.json()
             choices = payload.get("choices", [])
             if not choices:
-                return "LLM 沒有返回內容。請檢查 GLM API key、模型名稱與 quota。"
+                return "LLM 沒有返回內容。請檢查 API key、模型名稱與 quota。"
 
             finish_reason = choices[0].get("finish_reason", "")
-            print(f"GLM finish reason: {finish_reason}")
+            print(f"LLM finish reason: {finish_reason}")
 
             text = (choices[0].get("message", {}).get("content") or "").strip()
             if not text:
@@ -217,14 +218,14 @@ def generate_report(
             last_error = exc
             if attempt < MAX_RETRIES - 1:
                 wait = RETRY_BACKOFF_SECONDS[attempt]
-                print(f"GLM API request failed ({exc}), retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                print(f"LLM API request failed ({exc}), retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
                 time.sleep(wait)
 
     # All retries exhausted — still send something to Telegram rather than
     # letting the whole run fail silently (the data pipeline already succeeded).
-    print(f"GLM API failed after {MAX_RETRIES} attempts: {last_error}")
+    print(f"LLM API failed after {MAX_RETRIES} attempts: {last_error}")
     return (
-        "⚠️ AI 報告生成暫時失敗（GLM API 多次重試後仍無回應），以下為原始市場數據摘要：\n\n"
+        "⚠️ AI 報告生成暫時失敗（LLM API 多次重試後仍無回應），以下為原始市場數據摘要：\n\n"
         + fallback_report(user_payload)
     )
 
@@ -232,6 +233,6 @@ def generate_report(
 def fallback_report(user_payload: str) -> str:
     return (
         "【市場報告系統提示】\n"
-        "GLM API key 尚未配置。\n\n"
+        "LLM API key 尚未配置。\n\n"
         f"{user_payload[:3000]}"
     )
