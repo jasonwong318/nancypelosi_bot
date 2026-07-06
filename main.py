@@ -40,6 +40,25 @@ def report_session(now_hkt: datetime) -> dict[str, str]:
 
 def main() -> None:
     settings = load_settings()
+    try:
+        _run(settings)
+    except Exception as exc:
+        # Make failures visible in Telegram instead of only in GitHub Actions logs —
+        # otherwise a broken run looks like the cron simply didn't fire.
+        now_hkt = datetime.now(ZoneInfo("Asia/Hong_Kong")).strftime("%Y-%m-%d %H:%M HKT")
+        failure_message = (
+            f"⚠️ 市場報告生成失敗｜{now_hkt}\n\n"
+            f"錯誤: {type(exc).__name__}: {exc}\n\n"
+            "請檢查 GitHub Actions logs。"
+        )
+        try:
+            send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, failure_message)
+        except Exception:
+            pass  # Telegram itself may be down/misconfigured; don't mask the original error
+        raise
+
+
+def _run(settings) -> None:
     symbols = sorted(set(settings.portfolio_symbols + settings.watchlist_symbols))
     symbol_metadata = selected_metadata(symbols)
 

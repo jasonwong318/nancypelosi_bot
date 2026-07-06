@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import decimal
 import json
+import time
 from typing import Any
 
 import requests
@@ -160,6 +161,11 @@ def build_user_payload(
     )
 
 
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+MAX_RETRIES = 3
+RETRY_BACKOFF_SECONDS = (5, 15, 30)
+
+
 def generate_report(
     api_key: str,
     model: str,
@@ -169,36 +175,58 @@ def generate_report(
     if not api_key:
         return fallback_report(user_payload)
 
-    response = requests.post(
-        "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_payload},
-            ],
-            "temperature": 0.15,
-            "top_p": 0.85,
-            "max_tokens": 8000,
-        },
-        timeout=90,
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.post(
+                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_payload},
+                    ],
+                    "temperature": 0.15,
+                    "top_p": 0.85,
+                    "max_tokens": 8000,
+                },
+                timeout=90,
+            )
+            if response.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_SECONDS[attempt]
+                print(f"GLM API returned {response.status_code}, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                time.sleep(wait)
+                continue
+            response.raise_for_status()
+            payload = response.json()
+            choices = payload.get("choices", [])
+            if not choices:
+                return "LLM 沒有返回內容。請檢查 GLM API key、模型名稱與 quota。"
+
+            finish_reason = choices[0].get("finish_reason", "")
+            print(f"GLM finish reason: {finish_reason}")
+
+            text = (choices[0].get("message", {}).get("content") or "").strip()
+            if not text:
+                return "LLM 返回空白內容。"
+            if finish_reason == "length":
+                text += "\n\n⚠️ 報告因篇幅上限被截斷。"
+            return text
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_SECONDS[attempt]
+                print(f"GLM API request failed ({exc}), retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                time.sleep(wait)
+
+    # All retries exhausted — still send something to Telegram rather than
+    # letting the whole run fail silently (the data pipeline already succeeded).
+    print(f"GLM API failed after {MAX_RETRIES} attempts: {last_error}")
+    return (
+        "⚠️ AI 報告生成暫時失敗（GLM API 多次重試後仍無回應），以下為原始市場數據摘要：\n\n"
+        + fallback_report(user_payload)
     )
-    response.raise_for_status()
-    payload = response.json()
-    choices = payload.get("choices", [])
-    if not choices:
-        return "LLM 沒有返回內容。請檢查 GLM API key、模型名稱與 quota。"
-
-    finish_reason = choices[0].get("finish_reason", "")
-    print(f"GLM finish reason: {finish_reason}")
-
-    text = (choices[0].get("message", {}).get("content") or "").strip()
-    if not text:
-        return "LLM 返回空白內容。"
-    if finish_reason == "length":
-        text += "\n\n⚠️ 報告因篇幅上限被截斷。"
-    return text
 
 
 def fallback_report(user_payload: str) -> str:
