@@ -14,12 +14,18 @@ def csv_env(name: str, default: str = "") -> list[str]:
 
 
 @dataclass(frozen=True)
+class LlmProvider:
+    name: str
+    api_key: str
+    model: str
+    endpoint: str
+
+
+@dataclass(frozen=True)
 class Settings:
     telegram_bot_token: str
     telegram_chat_id: str
-    llm_api_key: str
-    llm_model: str
-    llm_endpoint: str
+    llm_providers: list[LlmProvider]
     portfolio_symbols: list[str]
     watchlist_symbols: list[str]
     news_queries: list[str]
@@ -28,7 +34,10 @@ class Settings:
 
 # Presets for the two providers this project has used; ARK_API_KEY takes
 # priority over ZHIPU_API_KEY so setting the Volcengine secret alone is
-# enough to switch providers without touching any other config.
+# enough to switch providers without touching any other config. Both are
+# tried in order — Ark's China-region endpoint has shown intermittent
+# connection timeouts from GitHub Actions runners, so GLM stays configured
+# as an automatic fallback rather than a full outage each time.
 _GLM_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 _ARK_ENDPOINT = "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions"
 
@@ -40,21 +49,31 @@ def load_settings() -> Settings:
     # env var, so `or default` is used instead of getenv's own default arg.
     ark_key = os.getenv("ARK_API_KEY", "")
     glm_key = os.getenv("ZHIPU_API_KEY", "")
+
+    llm_providers: list[LlmProvider] = []
     if ark_key:
-        llm_api_key = ark_key
-        llm_model = os.getenv("LLM_MODEL") or "ark-code-latest"
-        llm_endpoint = os.getenv("LLM_ENDPOINT") or _ARK_ENDPOINT
-    else:
-        llm_api_key = glm_key
-        llm_model = os.getenv("LLM_MODEL") or "glm-4.7-flash"
-        llm_endpoint = os.getenv("LLM_ENDPOINT") or _GLM_ENDPOINT
+        llm_providers.append(
+            LlmProvider(
+                name="Ark",
+                api_key=ark_key,
+                model=os.getenv("LLM_MODEL") or "ark-code-latest",
+                endpoint=os.getenv("LLM_ENDPOINT") or _ARK_ENDPOINT,
+            )
+        )
+    if glm_key:
+        llm_providers.append(
+            LlmProvider(
+                name="GLM",
+                api_key=glm_key,
+                model=os.getenv("GLM_MODEL") or "glm-4.7-flash",
+                endpoint=_GLM_ENDPOINT,
+            )
+        )
 
     return Settings(
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
-        llm_api_key=llm_api_key,
-        llm_model=llm_model,
-        llm_endpoint=llm_endpoint,
+        llm_providers=llm_providers,
         portfolio_symbols=csv_env(
             "PORTFOLIO_SYMBOLS",
             "TSLA.US,VOO.US,0941.HK,0883.HK,2802.HK,3416.HK,MRVL.US,LITE.US,9988.HK,9888.HK,3896.HK",

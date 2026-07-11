@@ -163,19 +163,20 @@ def build_user_payload(
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 MAX_RETRIES = 3
-RETRY_BACKOFF_SECONDS = (5, 15, 30)
+RETRY_BACKOFF_SECONDS = (5, 10)
+REQUEST_TIMEOUT_SECONDS = 30
 
 
-def generate_report(
+def _call_provider(
+    name: str,
     api_key: str,
     model: str,
+    endpoint: str,
     system_prompt: str,
     user_payload: str,
-    endpoint: str = "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-) -> str:
-    if not api_key:
-        return fallback_report(user_payload)
-
+) -> tuple[str | None, str | None]:
+    """Try one provider with retries. Returns (text, None) on success,
+    (None, error_summary) if this provider is exhausted."""
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
@@ -192,47 +193,70 @@ def generate_report(
                     "top_p": 0.85,
                     "max_tokens": 8000,
                 },
-                timeout=90,
+                timeout=REQUEST_TIMEOUT_SECONDS,
             )
             if response.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES - 1:
                 wait = RETRY_BACKOFF_SECONDS[attempt]
-                print(f"LLM API returned {response.status_code}, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                print(f"{name} API returned {response.status_code}, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
                 time.sleep(wait)
                 continue
             response.raise_for_status()
             payload = response.json()
             choices = payload.get("choices", [])
             if not choices:
-                return "LLM 沒有返回內容。請檢查 API key、模型名稱與 quota。"
+                return None, f"{name} 沒有返回內容（choices 為空）"
 
             finish_reason = choices[0].get("finish_reason", "")
-            print(f"LLM finish reason: {finish_reason}")
+            print(f"{name} finish reason: {finish_reason}")
 
             text = (choices[0].get("message", {}).get("content") or "").strip()
             if not text:
-                return "LLM 返回空白內容。"
+                return None, f"{name} 返回空白內容"
             if finish_reason == "length":
                 text += "\n\n⚠️ 報告因篇幅上限被截斷。"
-            return text
+            return text, None
         except requests.exceptions.RequestException as exc:
             last_error = exc
             if attempt < MAX_RETRIES - 1:
                 wait = RETRY_BACKOFF_SECONDS[attempt]
-                print(f"LLM API request failed ({exc}), retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                print(f"{name} API request failed ({exc}), retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
                 time.sleep(wait)
 
-    # All retries exhausted — still send something to Telegram rather than
+    print(f"{name} API failed after {MAX_RETRIES} attempts: {last_error}")
+    return None, f"{name}: {last_error}"
+
+
+def generate_report(
+    providers: list,
+    system_prompt: str,
+    user_payload: str,
+) -> str:
+    if not providers:
+        return fallback_report(user_payload, "沒有配置任何 LLM API key（ARK_API_KEY / ZHIPU_API_KEY 均未設定）")
+
+    errors: list[str] = []
+    for provider in providers:
+        text, error = _call_provider(
+            provider.name, provider.api_key, provider.model, provider.endpoint,
+            system_prompt, user_payload,
+        )
+        if text is not None:
+            if len(providers) > 1 and provider is not providers[0]:
+                text = f"ℹ️ 主要 LLM 供應商暫時無法連線，本次報告由 {provider.name} 生成。\n\n{text}"
+            return text
+        errors.append(error or f"{provider.name}: unknown error")
+
+    # Every provider exhausted — still send something to Telegram rather than
     # letting the whole run fail silently (the data pipeline already succeeded).
-    print(f"LLM API failed after {MAX_RETRIES} attempts: {last_error}")
-    return (
-        "⚠️ AI 報告生成暫時失敗（LLM API 多次重試後仍無回應），以下為原始市場數據摘要：\n\n"
-        + fallback_report(user_payload)
+    return fallback_report(
+        user_payload,
+        "AI 報告生成暫時失敗（所有 LLM 供應商多次重試後仍無回應）：\n" + "\n".join(errors),
     )
 
 
-def fallback_report(user_payload: str) -> str:
+def fallback_report(user_payload: str, reason: str = "LLM API key 尚未配置") -> str:
     return (
         "【市場報告系統提示】\n"
-        "LLM API key 尚未配置。\n\n"
+        f"{reason}\n\n"
         f"{user_payload[:3000]}"
     )
