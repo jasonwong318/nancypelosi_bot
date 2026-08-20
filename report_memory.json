@@ -1,30 +1,5 @@
 [
  {
-  "generated_at_hkt": "2026-08-14 22:30 HKT",
-  "session": "evening",
-  "changes": {
-   "100.HK": -12.69,
-   "700.HK": -0.23,
-   "883.HK": -0.17,
-   "941.HK": 1.05,
-   "2513.HK": -3.57,
-   "2802.HK": -0.77,
-   "3416.HK": -0.77,
-   "3896.HK": 1.67,
-   "9888.HK": -2.14,
-   "9988.HK": -1.64,
-   "AAPL.US": -0.11,
-   "AMZN.US": -0.34,
-   "GOOGL.US": -0.03,
-   "LITE.US": 5.77,
-   "MRVL.US": -1.34,
-   "NVDA.US": -0.05,
-   "TSLA.US": 1.73,
-   "VOO.US": -0.09
-  },
-  "significant_summary": "100.HK -12.69%, LITE.US +5.77%, 2513.HK -3.57%, 9888.HK -2.14%"
- },
- {
   "generated_at_hkt": "2026-08-17 10:04 HKT",
   "session": "morning",
   "changes": {
@@ -298,5 +273,30 @@
    "VOO.US": 0.21
   },
   "significant_summary": "MRVL.US +9.85%, 100.HK +9.71%, 3896.HK +8.90%, LITE.US -5.23%, TSLA.US +4.23%, 9888.HK +3.22%, 9988.HK +2.90%, AMZN.US +2.46%, AAPL.US +2.19%, 2513.HK +2.17%"
+ },
+ {
+  "generated_at_hkt": "2026-08-20 22:07 HKT",
+  "session": "evening",
+  "changes": {
+   "100.HK": 6.16,
+   "700.HK": 0.94,
+   "883.HK": 0.82,
+   "941.HK": 0.37,
+   "2513.HK": 1.09,
+   "2802.HK": 0.77,
+   "3416.HK": 0.77,
+   "3896.HK": 7.65,
+   "9888.HK": 2.45,
+   "9988.HK": 1.61,
+   "AAPL.US": -0.03,
+   "AMZN.US": -1.53,
+   "GOOGL.US": -0.79,
+   "LITE.US": 1.31,
+   "MRVL.US": 0.49,
+   "NVDA.US": 0.07,
+   "TSLA.US": -2.17,
+   "VOO.US": -0.35
+  },
+  "significant_summary": "3896.HK +7.65%, 100.HK +6.16%, 9888.HK +2.45%, TSLA.US -2.17%"
  }
 ]
