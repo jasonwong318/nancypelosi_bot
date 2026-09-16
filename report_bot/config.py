@@ -32,12 +32,11 @@ class Settings:
     system_prompt_path: Path
 
 
-# Presets for the two providers this project has used; ARK_API_KEY takes
-# priority over ZHIPU_API_KEY so setting the Volcengine secret alone is
-# enough to switch providers without touching any other config. Both are
-# tried in order — Ark's China-region endpoint has shown intermittent
-# connection timeouts from GitHub Actions runners, so GLM stays configured
-# as an automatic fallback rather than a full outage each time.
+# Presets for the two providers this project has used. GLM is tried first —
+# Ark's China-region endpoint (ark.cn-beijing.volces.com) has been reliably
+# unreachable from GitHub Actions runners (read timeouts on every attempt,
+# not an auth failure) since 2026-09-14, regardless of API key, so it is kept
+# only as a fallback in case that cross-border route recovers.
 _GLM_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 _ARK_ENDPOINT = "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions"
 
@@ -51,15 +50,6 @@ def load_settings() -> Settings:
     glm_key = os.getenv("ZHIPU_API_KEY", "")
 
     llm_providers: list[LlmProvider] = []
-    if ark_key:
-        llm_providers.append(
-            LlmProvider(
-                name="Ark",
-                api_key=ark_key,
-                model=os.getenv("LLM_MODEL") or "ark-code-latest",
-                endpoint=os.getenv("LLM_ENDPOINT") or _ARK_ENDPOINT,
-            )
-        )
     if glm_key:
         llm_providers.append(
             LlmProvider(
@@ -67,6 +57,15 @@ def load_settings() -> Settings:
                 api_key=glm_key,
                 model=os.getenv("GLM_MODEL") or "glm-4.7-flash",
                 endpoint=_GLM_ENDPOINT,
+            )
+        )
+    if ark_key:
+        llm_providers.append(
+            LlmProvider(
+                name="Ark",
+                api_key=ark_key,
+                model=os.getenv("LLM_MODEL") or "ark-code-latest",
+                endpoint=os.getenv("LLM_ENDPOINT") or _ARK_ENDPOINT,
             )
         )
 
