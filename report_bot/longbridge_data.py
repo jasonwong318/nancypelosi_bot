@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 import requests
 
+from report_bot.longbridge_utils import (
+    attr,
+    has_longbridge_credentials,
+    to_longbridge_symbol,
+    to_number,
+    to_yahoo_symbol,
+)
 from report_bot.symbols import metadata_for
 
 
@@ -30,7 +36,7 @@ class Quote:
 
 
 def fetch_quotes(symbols: list[str]) -> dict[str, Any]:
-    if not _has_longbridge_credentials():
+    if not has_longbridge_credentials():
         yahoo_quotes = fetch_yahoo_quotes(symbols)
         return {
             "status": "longbridge_missing_using_yahoo_fallback",
@@ -50,7 +56,7 @@ def fetch_quotes(symbols: list[str]) -> dict[str, Any]:
     try:
         config = Config.from_apikey_env()
         ctx = QuoteContext(config)
-        response = ctx.quote([_to_longbridge_symbol(symbol) for symbol in symbols])
+        response = ctx.quote([to_longbridge_symbol(symbol) for symbol in symbols])
         quotes = [_longbridge_quote_to_dict(item) for item in response]
         return {"status": "ok", "message": "Quotes loaded from Longbridge OpenAPI.", "quotes": quotes}
     except Exception as exc:
@@ -64,7 +70,7 @@ def fetch_quotes(symbols: list[str]) -> dict[str, Any]:
 def fetch_yahoo_quotes(symbols: list[str]) -> list[dict[str, Any]]:
     quotes: list[dict[str, Any]] = []
     for symbol in symbols:
-        yahoo_symbol = _to_yahoo_symbol(symbol)
+        yahoo_symbol = to_yahoo_symbol(symbol)
         try:
             quote = _fetch_yahoo_chart_quote(
                 requested_symbol=symbol,
@@ -97,13 +103,6 @@ def fetch_yahoo_index_quote(symbol: str, yahoo_symbol: str, name: str) -> dict[s
     return quote
 
 
-def _has_longbridge_credentials() -> bool:
-    return all(
-        os.getenv(name)
-        for name in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")
-    )
-
-
 def _fetch_yahoo_chart_quote(requested_symbol: str, yahoo_symbol: str, source: str) -> dict[str, Any]:
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
     response = requests.get(
@@ -119,8 +118,8 @@ def _fetch_yahoo_chart_quote(requested_symbol: str, yahoo_symbol: str, source: s
         raise RuntimeError("Yahoo Finance returned no chart result.")
 
     meta = result[0].get("meta", {})
-    last_done = _number(meta.get("regularMarketPrice"))
-    prev_close = _number(meta.get("chartPreviousClose") or meta.get("previousClose"))
+    last_done = to_number(meta.get("regularMarketPrice"))
+    prev_close = to_number(meta.get("chartPreviousClose") or meta.get("previousClose"))
     change = None
     change_percent = None
     if last_done is not None and prev_close not in (None, 0):
@@ -145,11 +144,11 @@ def _fetch_yahoo_chart_quote(requested_symbol: str, yahoo_symbol: str, source: s
 
 
 def _longbridge_quote_to_dict(item: Any) -> dict[str, Any]:
-    symbol = _read_attr(item, "symbol") or _read_attr(item, "security") or "UNKNOWN"
+    symbol = attr(item, "symbol") or attr(item, "security") or "UNKNOWN"
     metadata = metadata_for(str(symbol))
-    last_done = _number(_read_attr(item, "last_done"))
-    prev_close = _number(_read_attr(item, "prev_close"))
-    timestamp = _read_attr(item, "timestamp")
+    last_done = to_number(attr(item, "last_done"))
+    prev_close = to_number(attr(item, "prev_close"))
+    timestamp = attr(item, "timestamp")
     if isinstance(timestamp, (int, float)):
         timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
 
@@ -170,47 +169,15 @@ def _longbridge_quote_to_dict(item: Any) -> dict[str, Any]:
             prev_close=_to_str(prev_close),
             change=change,
             change_percent=change_percent,
-            open=_to_str(_read_attr(item, "open")),
-            high=_to_str(_read_attr(item, "high")),
-            low=_to_str(_read_attr(item, "low")),
-            volume=_read_attr(item, "volume"),
-            turnover=_to_str(_read_attr(item, "turnover")),
+            open=_to_str(attr(item, "open")),
+            high=_to_str(attr(item, "high")),
+            low=_to_str(attr(item, "low")),
+            volume=attr(item, "volume"),
+            turnover=_to_str(attr(item, "turnover")),
             timestamp=str(timestamp) if timestamp else None,
             source="Longbridge OpenAPI",
         )
     )
-
-
-def _read_attr(obj: Any, name: str) -> Any:
-    if isinstance(obj, dict):
-        return obj.get(name)
-    return getattr(obj, name, None)
-
-
-def _to_yahoo_symbol(symbol: str) -> str:
-    if symbol.endswith(".US"):
-        return symbol.removesuffix(".US")
-    if symbol.endswith(".HK"):
-        code = symbol.removesuffix(".HK")
-        return f"{code.zfill(4)}.HK"
-    return symbol
-
-
-def _to_longbridge_symbol(symbol: str) -> str:
-    if symbol.endswith(".HK"):
-        code = symbol.removesuffix(".HK")
-        if code.isdigit():
-            return f"{int(code)}.HK"
-    return symbol
-
-
-def _number(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _to_str(value: Any) -> str | None:

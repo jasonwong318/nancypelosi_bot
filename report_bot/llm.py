@@ -164,6 +164,9 @@ def build_user_payload(
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 MAX_RETRIES = 2
 RETRY_BACKOFF_SECONDS = (10,)
+# 429 means the provider's rate-limit window hasn't reset yet — a plain 10s
+# backoff often isn't enough, so give it more room before the one retry.
+RATE_LIMIT_BACKOFF_SECONDS = 20
 REQUEST_TIMEOUT_SECONDS = 75
 
 
@@ -196,7 +199,7 @@ def _call_provider(
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
             if response.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES - 1:
-                wait = RETRY_BACKOFF_SECONDS[attempt]
+                wait = RATE_LIMIT_BACKOFF_SECONDS if response.status_code == 429 else RETRY_BACKOFF_SECONDS[attempt]
                 print(f"{name} API returned {response.status_code}, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
                 time.sleep(wait)
                 continue

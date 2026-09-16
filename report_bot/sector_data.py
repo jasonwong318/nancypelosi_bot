@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 from typing import Any
+
+from report_bot.longbridge_utils import attr, has_longbridge_credentials, to_number
 
 
 def sector_payload() -> dict[str, Any]:
-    if not _has_longbridge_credentials():
+    if not has_longbridge_credentials():
         return {"status": "longbridge_missing", "anomalies": [], "top_movers": []}
 
     try:
@@ -23,14 +24,14 @@ def sector_payload() -> dict[str, Any]:
     for market in ("HK", "US"):
         try:
             resp = ctx.anomaly(market)
-            for change in _attr(resp, "changes") or []:
+            for change in attr(resp, "changes") or []:
                 anomalies.append(
                     {
                         "market": market,
-                        "symbol": _attr(change, "symbol"),
-                        "name": _attr(change, "name"),
-                        "alert_name": _attr(change, "alert_name"),
-                        "alert_time": str(_attr(change, "alert_time") or ""),
+                        "symbol": attr(change, "symbol"),
+                        "name": attr(change, "name"),
+                        "alert_name": attr(change, "alert_name"),
+                        "alert_time": str(attr(change, "alert_time") or ""),
                     }
                 )
         except Exception:
@@ -39,15 +40,15 @@ def sector_payload() -> dict[str, Any]:
     top_movers: list[dict[str, Any]] = []
     try:
         resp = ctx.top_movers(["HK", "US"])
-        for event in (_attr(resp, "events") or [])[:15]:
-            stock = _attr(event, "stock")
+        for event in (attr(resp, "events") or [])[:15]:
+            stock = attr(event, "stock")
             top_movers.append(
                 {
-                    "symbol": _attr(stock, "symbol"),
-                    "name": _attr(stock, "name"),
-                    "change": _num(_attr(stock, "change")),
-                    "alert_type": _attr(event, "alert_type"),
-                    "alert_reason": _attr(event, "alert_reason"),
+                    "symbol": attr(stock, "symbol"),
+                    "name": attr(stock, "name"),
+                    "change": to_number(attr(stock, "change")),
+                    "alert_type": attr(event, "alert_type"),
+                    "alert_reason": attr(event, "alert_reason"),
                 }
             )
     except Exception:
@@ -59,23 +60,3 @@ def sector_payload() -> dict[str, Any]:
         "anomalies": anomalies,
         "top_movers": top_movers,
     }
-
-
-def _has_longbridge_credentials() -> bool:
-    return all(
-        os.getenv(name)
-        for name in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")
-    )
-
-
-def _attr(obj: Any, name: str) -> Any:
-    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
-
-
-def _num(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None

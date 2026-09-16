@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -8,6 +7,7 @@ from urllib.parse import quote_plus
 
 import feedparser
 
+from report_bot.longbridge_utils import attr, has_longbridge_credentials, to_longbridge_symbol
 from report_bot.symbols import metadata_for
 
 MAX_NEWS_AGE_HOURS = 48
@@ -77,7 +77,7 @@ def fetch_google_news(
 
 
 def fetch_longbridge_news(symbols: list[str], limit_per_symbol: int = 3) -> list[dict[str, Any]]:
-    if not _has_longbridge_credentials():
+    if not has_longbridge_credentials():
         return []
     try:
         from longbridge.openapi import Config, ContentContext
@@ -90,16 +90,16 @@ def fetch_longbridge_news(symbols: list[str], limit_per_symbol: int = 3) -> list
     items: list[dict[str, Any]] = []
     for symbol in symbols:
         try:
-            news_items = ctx.news(_to_longbridge_symbol(symbol))
+            news_items = ctx.news(to_longbridge_symbol(symbol))
         except Exception:
             continue
         for item in news_items[:limit_per_symbol]:
             items.append(
                 {
-                    "title": _attr(item, "title") or "",
-                    "description": (_attr(item, "description") or "")[:300],
-                    "link": _attr(item, "url") or "",
-                    "published": str(_attr(item, "published_at") or ""),
+                    "title": attr(item, "title") or "",
+                    "description": (attr(item, "description") or "")[:300],
+                    "link": attr(item, "url") or "",
+                    "published": str(attr(item, "published_at") or ""),
                     "source": "Longbridge News",
                     "symbol": symbol,
                 }
@@ -160,21 +160,3 @@ def news_payload(
         "items": items,
     }
 
-
-def _has_longbridge_credentials() -> bool:
-    return all(
-        os.getenv(name)
-        for name in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")
-    )
-
-
-def _to_longbridge_symbol(symbol: str) -> str:
-    if symbol.endswith(".HK"):
-        code = symbol.removesuffix(".HK")
-        if code.isdigit():
-            return f"{int(code)}.HK"
-    return symbol
-
-
-def _attr(obj: Any, name: str) -> Any:
-    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)

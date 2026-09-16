@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import os
 from datetime import date, timedelta
 from typing import Any
+
+from report_bot.longbridge_utils import has_longbridge_credentials
 
 
 def calendar_payload(today_hkt: date) -> dict[str, Any]:
@@ -15,7 +16,7 @@ def calendar_payload(today_hkt: date) -> dict[str, Any]:
         "hk_half_day": False,
         "source": "weekday fallback",
     }
-    if not _has_longbridge_credentials():
+    if not has_longbridge_credentials():
         return result
 
     try:
@@ -46,10 +47,3 @@ def closure_notice(calendar: dict[str, Any]) -> str | None:
     if not hk:
         return "📅 今日港股休市（假期），美股正常交易"
     return "📅 今日美股休市（假期），港股正常交易"
-
-
-def _has_longbridge_credentials() -> bool:
-    return all(
-        os.getenv(name)
-        for name in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")
-    )

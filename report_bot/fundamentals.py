@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import requests
 
+from report_bot.longbridge_utils import (
+    attr,
+    has_longbridge_credentials,
+    to_longbridge_symbol,
+    to_number,
+    to_yahoo_symbol,
+)
+
 
 def fundamentals_payload(symbols: list[str]) -> dict[str, Any]:
-    if _has_longbridge_credentials():
+    if has_longbridge_credentials():
         try:
             items = _fetch_longbridge_fundamentals(symbols)
             return {
@@ -28,45 +35,45 @@ def _fetch_longbridge_fundamentals(symbols: list[str]) -> dict[str, Any]:
 
     items: dict[str, Any] = {}
     for symbol in symbols:
-        lb_symbol = _to_longbridge_symbol(symbol)
+        lb_symbol = to_longbridge_symbol(symbol)
         entry: dict[str, Any] = {"source": "Longbridge OpenAPI"}
 
         try:
             valuation = ctx.valuation(lb_symbol)
-            metrics = _attr(valuation, "metrics")
-            entry["pe_ttm"] = _latest_metric(_attr(metrics, "pe"))
-            entry["pb"] = _latest_metric(_attr(metrics, "pb"))
-            entry["ps"] = _latest_metric(_attr(metrics, "ps"))
-            entry["dividend_yield_pct"] = _latest_metric(_attr(metrics, "dvd_yld"))
+            metrics = attr(valuation, "metrics")
+            entry["pe_ttm"] = _latest_metric(attr(metrics, "pe"))
+            entry["pb"] = _latest_metric(attr(metrics, "pb"))
+            entry["ps"] = _latest_metric(attr(metrics, "ps"))
+            entry["dividend_yield_pct"] = _latest_metric(attr(metrics, "dvd_yld"))
         except Exception as exc:
             entry["valuation_error"] = str(exc)
 
         try:
             rating = ctx.institution_rating(lb_symbol)
-            latest = _attr(rating, "latest")
-            target = _attr(latest, "target")
-            low = _num(_attr(target, "lowest_price"))
-            high = _num(_attr(target, "highest_price"))
+            latest = attr(rating, "latest")
+            target = attr(latest, "target")
+            low = to_number(attr(target, "lowest_price"))
+            high = to_number(attr(target, "highest_price"))
             if low is not None and high is not None:
                 entry["analyst_target_price"] = round((low + high) / 2, 2)
                 entry["analyst_target_low"] = low
                 entry["analyst_target_high"] = high
-            evaluate = _attr(latest, "evaluate")
+            evaluate = attr(latest, "evaluate")
             entry["analyst_recommend_counts"] = {
-                "strong_buy": _num(_attr(evaluate, "over")),
-                "buy": _num(_attr(evaluate, "buy")),
-                "hold": _num(_attr(evaluate, "hold")),
-                "sell": _num(_attr(evaluate, "sell")),
-                "under": _num(_attr(evaluate, "under")),
+                "strong_buy": to_number(attr(evaluate, "over")),
+                "buy": to_number(attr(evaluate, "buy")),
+                "hold": to_number(attr(evaluate, "hold")),
+                "sell": to_number(attr(evaluate, "sell")),
+                "under": to_number(attr(evaluate, "under")),
             }
         except Exception as exc:
             entry["institution_rating_error"] = str(exc)
 
         try:
             forecast = ctx.forecast_eps(lb_symbol)
-            forecast_items = _attr(forecast, "items") or []
+            forecast_items = attr(forecast, "items") or []
             if forecast_items:
-                entry["forecast_eps_mean"] = _num(_attr(forecast_items[0], "forecast_eps_mean"))
+                entry["forecast_eps_mean"] = to_number(attr(forecast_items[0], "forecast_eps_mean"))
         except Exception:
             pass
 
@@ -78,7 +85,7 @@ def _fetch_longbridge_fundamentals(symbols: list[str]) -> dict[str, Any]:
 def _fetch_yahoo_fundamentals(symbols: list[str], error: str | None = None) -> dict[str, Any]:
     items: dict[str, Any] = {}
     for symbol in symbols:
-        yahoo_symbol = _to_yahoo_symbol(symbol)
+        yahoo_symbol = to_yahoo_symbol(symbol)
         try:
             items[symbol] = _fetch_yahoo_summary(yahoo_symbol)
         except Exception as exc:
@@ -125,45 +132,9 @@ def _fetch_yahoo_summary(yahoo_symbol: str) -> dict[str, Any]:
     }
 
 
-def _has_longbridge_credentials() -> bool:
-    return all(
-        os.getenv(name)
-        for name in ("LONGBRIDGE_APP_KEY", "LONGBRIDGE_APP_SECRET", "LONGBRIDGE_ACCESS_TOKEN")
-    )
-
-
-def _to_yahoo_symbol(symbol: str) -> str:
-    if symbol.endswith(".US"):
-        return symbol.removesuffix(".US")
-    if symbol.endswith(".HK"):
-        return symbol.removesuffix(".HK").zfill(4) + ".HK"
-    return symbol
-
-
-def _to_longbridge_symbol(symbol: str) -> str:
-    if symbol.endswith(".HK"):
-        code = symbol.removesuffix(".HK")
-        if code.isdigit():
-            return f"{int(code)}.HK"
-    return symbol
-
-
-def _attr(obj: Any, name: str) -> Any:
-    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
-
-
-def _num(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _latest_metric(metric: Any) -> float | None:
     """Extract the most recent value from a Longbridge ValuationMetricData time-series."""
-    points = _attr(metric, "list") or []
+    points = attr(metric, "list") or []
     if not points:
         return None
-    return _num(_attr(points[-1], "value"))
+    return to_number(attr(points[-1], "value"))

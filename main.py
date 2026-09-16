@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -74,12 +75,25 @@ def _run(settings) -> None:
     movers = compute_movers(quotes)
     focus_symbols = movers.get("focus_symbols", [])
 
-    macro = macro_payload()
-    news = news_payload(settings.news_queries, symbols=symbols, focus_symbols=focus_symbols)
+    # These fetches don't depend on each other (news needs focus_symbols from the
+    # quotes fetch above, but nothing else here needs quotes) — running them on
+    # separate threads cuts wall-clock time, since each is a handful of blocking
+    # network/SDK calls (fundamentals alone is ~3 calls per portfolio symbol).
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        macro_future = executor.submit(macro_payload)
+        news_future = executor.submit(
+            news_payload, settings.news_queries, symbols=symbols, focus_symbols=focus_symbols
+        )
+        fundamentals_future = executor.submit(fundamentals_payload, settings.portfolio_symbols)
+        sector_future = executor.submit(sector_payload)
+
+        macro = macro_future.result()
+        news = news_future.result()
+        fundamentals = fundamentals_future.result()
+        sector = sector_future.result()
+
     account = account_payload(settings.portfolio_symbols)
     risk = risk_payload(settings.portfolio_symbols, settings.watchlist_symbols, symbol_metadata)
-    fundamentals = fundamentals_payload(settings.portfolio_symbols)
-    sector = sector_payload()
 
     current_changes: dict[str, float | None] = {}
     for q in quotes.get("quotes", []):
