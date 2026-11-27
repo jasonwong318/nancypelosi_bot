@@ -60,10 +60,13 @@ def fetch_quotes(symbols: list[str]) -> dict[str, Any]:
         quotes = [_longbridge_quote_to_dict(item) for item in response]
         return {"status": "ok", "message": "Quotes loaded from Longbridge OpenAPI.", "quotes": quotes}
     except Exception as exc:
+        # Most common cause: LONGBRIDGE_ACCESS_TOKEN expired (code 401003). Fall
+        # back to Yahoo so the report still has prices instead of an empty table.
+        print(f"Longbridge quote request failed ({exc}); falling back to Yahoo Finance")
         return {
-            "status": "error",
-            "message": f"Longbridge quote request failed: {exc}",
-            "quotes": [],
+            "status": "longbridge_error_using_yahoo_fallback",
+            "message": f"Longbridge quote request failed: {exc}. Yahoo Finance chart API is used as a temporary fallback.",
+            "quotes": fetch_yahoo_quotes(symbols),
         }
 
 
