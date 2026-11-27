@@ -162,12 +162,43 @@ def build_user_payload(
 
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+# Timeouts/connection errors: one retry only — a provider that timed out twice
+# (Ark from GitHub runners) won't recover in this run, and each try costs 75s.
 MAX_RETRIES = 2
 RETRY_BACKOFF_SECONDS = (10,)
-# 429 means the provider's rate-limit window hasn't reset yet — a plain 10s
-# backoff often isn't enough, so give it more room before the one retry.
-RATE_LIMIT_BACKOFF_SECONDS = 20
+# 429 is the free-tier rate/concurrency limit (glm-4.7-flash) — it usually
+# clears within a minute, so it gets more attempts with longer waits.
+MAX_RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_BACKOFF_SECONDS = (30, 60)
+CONNECT_TIMEOUT_SECONDS = 15
+# Max silence between streamed chunks (not total generation time).
 REQUEST_TIMEOUT_SECONDS = 75
+
+
+def _read_stream(response: requests.Response) -> tuple[str, str]:
+    """Collect an OpenAI-compatible SSE stream into (content, finish_reason)."""
+    parts: list[str] = []
+    finish_reason = ""
+    for raw in response.iter_lines(decode_unicode=False):
+        if not raw:
+            continue
+        line = raw.decode("utf-8").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[len("data:"):].strip()
+        if data == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        for choice in chunk.get("choices") or []:
+            content = (choice.get("delta") or {}).get("content")
+            if content:
+                parts.append(content)
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+    return "".join(parts), finish_reason
 
 
 def _call_provider(
@@ -181,7 +212,9 @@ def _call_provider(
     """Try one provider with retries. Returns (text, None) on success,
     (None, error_summary) if this provider is exhausted."""
     last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
+    error_attempts = 0
+    rate_limit_attempts = 0
+    while error_attempts < MAX_RETRIES and rate_limit_attempts < MAX_RATE_LIMIT_RETRIES:
         try:
             response = requests.post(
                 endpoint,
@@ -195,24 +228,40 @@ def _call_provider(
                     "temperature": 0.15,
                     "top_p": 0.85,
                     "max_tokens": 8000,
+                    # Streamed so the read timeout applies per chunk, not to the
+                    # whole generation: a full memo can take >75s, which used to
+                    # surface as "Read timed out" even though the provider was
+                    # up and working (Ark since 2026-09-15).
+                    "stream": True,
                 },
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=(CONNECT_TIMEOUT_SECONDS, REQUEST_TIMEOUT_SECONDS),
+                stream=True,
             )
-            if response.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES - 1:
-                wait = RATE_LIMIT_BACKOFF_SECONDS if response.status_code == 429 else RETRY_BACKOFF_SECONDS[attempt]
-                print(f"{name} API returned {response.status_code}, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+            if response.status_code == 429:
+                rate_limit_attempts += 1
+                # The body says *why* (e.g. concurrency limit vs. quota/balance
+                # exhausted) — without it a 429 can't be told apart.
+                print(f"{name} API returned 429: {response.text[:300]}")
+                if rate_limit_attempts < MAX_RATE_LIMIT_RETRIES:
+                    wait = RATE_LIMIT_BACKOFF_SECONDS[rate_limit_attempts - 1]
+                    print(f"{name} rate limited, retrying in {wait}s (attempt {rate_limit_attempts}/{MAX_RATE_LIMIT_RETRIES})")
+                    time.sleep(wait)
+                    continue
+            elif response.status_code in RETRYABLE_STATUS_CODES and error_attempts < MAX_RETRIES - 1:
+                error_attempts += 1
+                wait = RETRY_BACKOFF_SECONDS[error_attempts - 1]
+                print(f"{name} API returned {response.status_code}, retrying in {wait}s (attempt {error_attempts}/{MAX_RETRIES})")
                 time.sleep(wait)
                 continue
+            if response.status_code >= 400:
+                print(f"{name} API returned {response.status_code}: {response.text[:300]}")
             response.raise_for_status()
-            payload = response.json()
-            choices = payload.get("choices", [])
-            if not choices:
-                return None, f"{name} 沒有返回內容（choices 為空）"
 
-            finish_reason = choices[0].get("finish_reason", "")
-            print(f"{name} finish reason: {finish_reason}")
+            started = time.monotonic()
+            text, finish_reason = _read_stream(response)
+            print(f"{name} finish reason: {finish_reason} ({time.monotonic() - started:.0f}s streaming)")
 
-            text = (choices[0].get("message", {}).get("content") or "").strip()
+            text = text.strip()
             if not text:
                 return None, f"{name} 返回空白內容"
             if finish_reason == "length":
@@ -220,12 +269,15 @@ def _call_provider(
             return text, None
         except requests.exceptions.RequestException as exc:
             last_error = exc
-            if attempt < MAX_RETRIES - 1:
-                wait = RETRY_BACKOFF_SECONDS[attempt]
-                print(f"{name} API request failed ({exc}), retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})")
+            if isinstance(exc, requests.exceptions.HTTPError):
+                break  # non-retryable status (or retries for it exhausted)
+            error_attempts += 1
+            if error_attempts < MAX_RETRIES:
+                wait = RETRY_BACKOFF_SECONDS[error_attempts - 1]
+                print(f"{name} API request failed ({exc}), retrying in {wait}s (attempt {error_attempts}/{MAX_RETRIES})")
                 time.sleep(wait)
 
-    print(f"{name} API failed after {MAX_RETRIES} attempts: {last_error}")
+    print(f"{name} API failed: {last_error}")
     return None, f"{name}: {last_error}"
 
 
