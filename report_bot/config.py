@@ -32,11 +32,11 @@ class Settings:
     system_prompt_path: Path
 
 
-# Presets for the two providers this project has used. GLM is tried first —
-# Ark's China-region endpoint (ark.cn-beijing.volces.com) has been reliably
-# unreachable from GitHub Actions runners (read timeouts on every attempt,
-# not an auth failure) since 2026-09-14, regardless of API key, so it is kept
-# only as a fallback in case that cross-border route recovers.
+# Presets for the two providers this project has used. The Ark "read
+# timeouts" seen since 2026-09-15 were not a network block: the connection
+# succeeded and some runs finished after a retry — generating the full memo
+# simply took longer than the 75s non-streaming read timeout. Requests are
+# now streamed (see llm.py), so slow-but-working generation no longer fails.
 _GLM_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 _ARK_ENDPOINT = "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions"
 
@@ -49,16 +49,9 @@ def load_settings() -> Settings:
     ark_key = os.getenv("ARK_API_KEY", "")
     glm_key = os.getenv("ZHIPU_API_KEY", "")
 
+    # Ark first (the primary provider until 2026-09); GLM's free flash tier
+    # is frequently 429 rate-limited, so it is the fallback.
     llm_providers: list[LlmProvider] = []
-    if glm_key:
-        llm_providers.append(
-            LlmProvider(
-                name="GLM",
-                api_key=glm_key,
-                model=os.getenv("GLM_MODEL") or "glm-4.7-flash",
-                endpoint=_GLM_ENDPOINT,
-            )
-        )
     if ark_key:
         llm_providers.append(
             LlmProvider(
@@ -66,6 +59,15 @@ def load_settings() -> Settings:
                 api_key=ark_key,
                 model=os.getenv("LLM_MODEL") or "ark-code-latest",
                 endpoint=os.getenv("LLM_ENDPOINT") or _ARK_ENDPOINT,
+            )
+        )
+    if glm_key:
+        llm_providers.append(
+            LlmProvider(
+                name="GLM",
+                api_key=glm_key,
+                model=os.getenv("GLM_MODEL") or "glm-4.7-flash",
+                endpoint=_GLM_ENDPOINT,
             )
         )
 

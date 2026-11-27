@@ -170,7 +170,35 @@ RETRY_BACKOFF_SECONDS = (10,)
 # clears within a minute, so it gets more attempts with longer waits.
 MAX_RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_BACKOFF_SECONDS = (30, 60)
+CONNECT_TIMEOUT_SECONDS = 15
+# Max silence between streamed chunks (not total generation time).
 REQUEST_TIMEOUT_SECONDS = 75
+
+
+def _read_stream(response: requests.Response) -> tuple[str, str]:
+    """Collect an OpenAI-compatible SSE stream into (content, finish_reason)."""
+    parts: list[str] = []
+    finish_reason = ""
+    for raw in response.iter_lines(decode_unicode=False):
+        if not raw:
+            continue
+        line = raw.decode("utf-8").strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[len("data:"):].strip()
+        if data == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        for choice in chunk.get("choices") or []:
+            content = (choice.get("delta") or {}).get("content")
+            if content:
+                parts.append(content)
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+    return "".join(parts), finish_reason
 
 
 def _call_provider(
@@ -200,8 +228,14 @@ def _call_provider(
                     "temperature": 0.15,
                     "top_p": 0.85,
                     "max_tokens": 8000,
+                    # Streamed so the read timeout applies per chunk, not to the
+                    # whole generation: a full memo can take >75s, which used to
+                    # surface as "Read timed out" even though the provider was
+                    # up and working (Ark since 2026-09-15).
+                    "stream": True,
                 },
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=(CONNECT_TIMEOUT_SECONDS, REQUEST_TIMEOUT_SECONDS),
+                stream=True,
             )
             if response.status_code == 429:
                 rate_limit_attempts += 1
@@ -219,16 +253,15 @@ def _call_provider(
                 print(f"{name} API returned {response.status_code}, retrying in {wait}s (attempt {error_attempts}/{MAX_RETRIES})")
                 time.sleep(wait)
                 continue
+            if response.status_code >= 400:
+                print(f"{name} API returned {response.status_code}: {response.text[:300]}")
             response.raise_for_status()
-            payload = response.json()
-            choices = payload.get("choices", [])
-            if not choices:
-                return None, f"{name} 沒有返回內容（choices 為空）"
 
-            finish_reason = choices[0].get("finish_reason", "")
-            print(f"{name} finish reason: {finish_reason}")
+            started = time.monotonic()
+            text, finish_reason = _read_stream(response)
+            print(f"{name} finish reason: {finish_reason} ({time.monotonic() - started:.0f}s streaming)")
 
-            text = (choices[0].get("message", {}).get("content") or "").strip()
+            text = text.strip()
             if not text:
                 return None, f"{name} 返回空白內容"
             if finish_reason == "length":
